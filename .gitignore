@@ -1,0 +1,19 @@
+# 本地/临时
+*.log
+desktop.ini
+.DS_Store
+Thumbs.db
+
+# 参考站镜像(部署不需要, 体积大; 需要版本管理可注释掉)
+/reference/
+
+# 2026 玻璃库 .AGF/.xlsx 源数据(已生成 glassdb.js, 运行不需要; 需要版本管理可注释掉)
+/2026玻璃库/
+
+# 本地静态服务脚本(部署不需要)
+serve.bat
+serve.ps1
+serve_nocache.py
+
+# 本地启动台(指向 localhost, 不适合 Gitee Pages; 用根目录 index.html 作入口)
+启动.html

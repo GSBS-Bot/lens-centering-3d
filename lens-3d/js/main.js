@@ -1,0 +1,735 @@
+// main.js — M1 接线：数据模型 -> LDM 表格 + 3D 双向同步
+import * as THREE from '../vendor/three/three.module.js';
+import { OrbitControls } from '../vendor/three/OrbitControls.js';
+import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js';
+import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge } from './geom.js';
+import { LDM } from './ldm.js';
+import { importFile } from './import.js';
+import { traceFields, firstOrder, autoVignette, traceSpot } from './trace.js';
+
+const STATUS = document.querySelector('.status');
+const renderFo = document.getElementById('fo');
+const resetBtn = document.getElementById('resetView');
+const demoSel = document.getElementById('demoSelect');
+const fileInput = document.getElementById('fileInput');
+const importBtn = document.getElementById('importFile');
+const fmodeEl = document.getElementById('fmode');
+const fvalsEl = document.getElementById('fvals');
+const npupilEl = document.getElementById('npupil');
+const wfnEl = document.getElementById('wfn');
+const autoVigBtn = document.getElementById('autoVig');
+const spotBtn = document.getElementById('spotBtn');
+const tabLayout = document.getElementById('tabLayout');
+const tabSpot = document.getElementById('tabSpot');
+const spotView = document.getElementById('spotView');
+const spotMain = document.getElementById('spotMain');
+const spotGrid = document.getElementById('spotGrid');
+const spotField = document.getElementById('spotField');
+const spotWavelength = document.getElementById('spotWavelength');
+const spotAiry = document.getElementById('spotAiry');
+const vigEl = document.getElementById('fieldVig');
+
+function setStatus(msg, ok) {
+  if (STATUS) STATUS.textContent = msg;
+  if (ok) STATUS.classList.add('ok'); else STATUS.classList.remove('ok');
+}
+function fail(err) {
+  console.error(err);
+  setStatus('报错：' + (err && err.message ? err.message : err));
+}
+
+// 按 BOM 正确解码 .zmx/.seq（UTF-16 文件无需 .text() 的 UTF-8 破坏）
+function lensTextFromBuffer(buf) {
+  const u = new Uint8Array(buf);
+  if (u.length > 1 && u[0] === 0xff && u[1] === 0xfe) return new TextDecoder('utf-16le').decode(u);
+  if (u.length > 1 && u[0] === 0xfe && u[1] === 0xff) return new TextDecoder('utf-16be').decode(u);
+  return new TextDecoder('utf-8').decode(u);
+}
+// 载入系统后，把视场/模式/波长同步到左侧面板
+function applyPanelFromSys() {
+  if (fvalsEl) {
+    // 视场取自文件读取(sys.fields)；无则仅轴上(0)。不编造 0.707/满场。
+    const f = (sys.fields && sys.fields.length) ? sys.fields : [0];
+    fvalsEl.value = f.join(' ');
+  }
+  if (fmodeEl) fmodeEl.value = (sys.fmode === 'height') ? 'height' : 'angle';
+  renderWaveEditor();
+}
+
+// ---------- Three.js scene ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#101418');
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);            // 3D 透视
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('view'), antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const layout2dEl = document.getElementById('layout2d');   // 2D 剖面 SVG（参考站形式）
+const layoutBadgeEl = document.getElementById('layoutBadge');
+const vertEl = document.getElementById('vertReadout');    // 3D 顶点坐标小窗
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight('#dcefff', '#10141c', 1.0));
+const dir = new THREE.DirectionalLight('#ffffff', 1.6);
+dir.position.set(20, 30, 20);
+scene.add(dir);
+scene.add(new THREE.GridHelper(200, 50, '#2a3542', '#1c242d'));
+const origin = new THREE.AxesHelper(30); origin.material.opacity = 0.25; origin.material.transparent = true;
+scene.add(origin);
+
+const rayGroup = new THREE.Group();
+scene.add(rayGroup);
+
+// ---------- 数据与 3D 同步 ----------
+let sys = demoSingleElement();
+let lensGroup = null;
+let surfaceList = [];
+let lensMeshes = [];
+let highlightObj = null;
+let frontZ = null;      // 第一个镜片前表面顶点 z（显示裁切起点，物方不显示）
+
+// ---- 视图预设（参考 Zemax 三维布局的方向）：等轴测 / X-Y / Y-Z / X-Z ----
+// 坐标约定：光轴=+Z，像面中心=原点(0,0,0)，镜头实体位于 -Z（物方）侧。
+const VIEW_PRESETS = {
+  iso: { dir: new THREE.Vector3(0.8, -0.45, -0.8).normalize(), up: new THREE.Vector3(0, 1, 0) },
+  xy:  { dir: new THREE.Vector3(0, 0, -1), up: new THREE.Vector3(0, 1, 0) },   // 从物方看入瞳（X-Y 平面）
+  yz:  { dir: new THREE.Vector3(-1, 0, 0), up: new THREE.Vector3(0, 1, 0) },  // 剖面：沿 X 看（Y-Z 平面）
+  xz:  { dir: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, -1) }, // 侧面：沿 Y 看（X-Z 平面）
+};
+
+let viewMode = 'iso';
+function setActiveView(mode) {
+  viewMode = mode;
+  document.querySelectorAll('#viewSeg .vbtn').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === mode));
+}
+
+// 镜片包围盒 + 像面中心 + 视场光束(仅首面→像面, 不含物方)，作为取景基准
+function sceneBox() {
+  const box = new THREE.Box3();
+  if (lensMeshes.length) for (const m of lensMeshes) box.expandByObject(m);
+  else box.set(new THREE.Vector3(-12, -12, -50), new THREE.Vector3(12, 12, 2));
+  box.expandByPoint(new THREE.Vector3(0, 0, 0));     // 把像面中心纳入
+  // 纳入视场光束(从首面起)，物方不参与
+  const clipMin = (frontZ == null) ? -1e9 : frontZ;
+  if (lastTrace.fields) for (const fd of lastTrace.fields) {
+    const list = (fd.lams && fd.lams.length) ? fd.lams : [{ chief: fd.chief, rays: fd.rays }];
+    for (const lam of list) for (const r of (lam.chief ? [lam.chief] : []).concat(lam.rays || [])) {
+      if (!r.pts) continue;
+      for (const p of r.pts) { if (p.length < 3 || p[2] < clipMin) continue; box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2])); }
+    }
+  }
+  return box;
+}
+
+function fitCamera(mode) {
+  const box = sceneBox();
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxdim = Math.max(size.x, size.y, size.z, 40);
+  const p = VIEW_PRESETS[mode] || VIEW_PRESETS.iso;
+  controls.enableRotate = true;                    // 3D 可用旋转
+  controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+  camera.up.copy(p.up);
+  camera.position.copy(center).addScaledVector(p.dir, maxdim * 1.7);
+  controls.target.copy(center);
+  setActiveView(mode);
+  controls.update();
+}
+
+// ---- 2D 剖面（常驻面板，位于 3D 上方）----
+const layout = { scale: 1, tx: 0, ty: 0 };
+function layoutApply() {
+  const r = layout2dEl.querySelector('#lgRoot');
+  if (r) r.setAttribute('transform', `translate(${layout.tx} ${layout.ty}) scale(${layout.scale})`);
+}
+function renderLayout2D() {
+  if (!surfaceList || !surfaceList.length) return;   // 系统尚未构建
+  layout.scale = 1; layout.tx = 0; layout.ty = 0;   // 每次重建回到自适应
+  renderLayoutSVG(layout2dEl, sys, surfaceList, {
+    rays: collateFieldRays(lastTrace.fields),
+    imageMarks: lastTrace.fields.map(fd => ({ y: fd.chief?.imageY, field: fd.field, mode: fd.mode })),
+  });
+  layoutApply();
+  if (layoutBadgeEl) layoutBadgeEl.textContent = layoutBadge(sys);
+}
+
+// ---- M2a：视场光线（瞄准到光阑）+ 一阶量 + 入瞳 ----
+const FIELDCOLS = [0xffd633, 0xff8a3c, 0xff5a5a, 0xe06bff, 0x5aa7ff, 0x59e0c0, 0xd0e84a];
+let lastTrace = { fields: [], fo: null, EP: null, vig: null, primaryNm: null };
+let primaryNm = null;
+let waveState = [];
+const WLP = { F: 486.13, d: 587.56, C: 656.27, e: 546.07, g: 435.83 };
+const wlTableEl = document.getElementById('wltable');
+
+// 按波长自动配色(可见光谱近似, 十六进制): 400紫→486蓝→546绿→588黄→656红
+function wlColor(nm) {
+  nm = +nm || 587.56;
+  const A = [[400, '#7a3bff'], [435, '#5a5aff'], [486, '#0eb6ff'], [546, '#00d24a'], [588, '#ffb300'], [656, '#ff2d00'], [720, '#ff2d00']];
+  const rgb = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  if (nm <= A[0][0]) return A[0][1];
+  for (let i = 1; i < A.length; i++) {
+    if (nm <= A[i][0]) {
+      const [n1, c1] = A[i - 1], [n2, c2] = A[i];
+      const t = (nm - n1) / (n2 - n1), r = rgb(c1), g = rgb(c2);
+      return '#' + r.map((v, j) => Math.round(v + (g[j] - v) * t).toString(16).padStart(2, '0')).join('');
+    }
+  }
+  return A[A.length - 1][1];
+}
+function effColor(w) { return (w && w.color && String(w.color).trim() !== '') ? w.color : wlColor(+w.nm || 587.56); }
+
+function activeLambdas() {
+  const list = waveState.length ? waveState : [{ nm: 587.56, weight: 1, color: '#ffb300', primary: true }];
+  let primary = list.findIndex(w => w.primary); if (primary < 0) primary = 0;
+  return { lambdas: list.map(w => ({ nm: +w.nm || 587.56, weight: Math.max(0, +w.weight || 0), color: effColor(w) })), primary };
+}
+function renderWaveEditor() {
+  if (!wlTableEl) return;
+  wlTableEl.innerHTML = waveState.map((w, i) => `
+    <div class="wl-row">
+      <input type="radio" name="wlpri" data-i="${i}" ${w.primary ? 'checked' : ''} title="主波长">
+      <input class="wlnm" data-i="${i}" data-k="nm" value="${w.nm}" spellcheck="false" title="波长 nm">
+      <input data-i="${i}" data-k="weight" type="number" step="0.1" min="0" value="${w.weight}" title="权重">
+      <span class="sw" style="background:${effColor(w)}"></span>
+      <input data-i="${i}" data-k="color" value="${w.color}" placeholder="空=自动" spellcheck="false" title="颜色(留空自动配色)">
+      <button class="del" data-i="${i}" data-act="del" title="删除">✕</button>
+    </div>`).join('');
+}
+function bindWaveEditor() {
+  if (!wlTableEl) return;
+  wlTableEl.addEventListener('input', e => {
+    const t = e.target; if (!t.dataset.i || !t.dataset.k) return;
+    const i = +t.dataset.i, k = t.dataset.k;
+    waveState[i][k] = (k === 'weight') ? parseFloat(t.value || 0) : t.value;
+    refreshField();
+  });
+  wlTableEl.addEventListener('change', e => {
+    const t = e.target;
+    if (t.name === 'wlpri' && t.dataset.i != null) {
+      const i = +t.dataset.i; waveState.forEach((w, j) => w.primary = (j === i));
+      renderWaveEditor(); refreshField();
+    }
+  });
+  wlTableEl.addEventListener('click', e => {
+    const b = e.target.closest('.del'); if (!b) return;
+    const i = +b.dataset.i; waveState.splice(i, 1);
+    if (!waveState.length) waveState = [{ nm: 587.56, weight: 1, color: '#ffb300', primary: true }];
+    renderWaveEditor(); refreshField();
+  });
+  document.getElementById('wlAdd').addEventListener('click', () => {
+    waveState.push({ nm: 587.56, weight: 1, color: '', primary: false });   // 颜色留空=自动
+    renderWaveEditor(); refreshField();
+  });
+  document.getElementById('wlPreset').addEventListener('click', () => {
+    waveState = [
+      { nm: 486.13, weight: 1, color: '#0eb6ff', primary: false },
+      { nm: 546.07, weight: 1, color: '#00d24a', primary: false },
+      { nm: 587.56, weight: 2, color: '#ffb300', primary: true },
+      { nm: 656.27, weight: 1, color: '#ff2d00', primary: false },
+    ];
+    renderWaveEditor(); refreshField();
+  });
+  document.getElementById('wlOnly').addEventListener('click', () => {
+    const w = waveState.find(x => x.primary) || waveState[0] || { nm: 587.56, weight: 1, color: '#ffb300' };
+    waveState = [{ ...w, weight: w.weight ?? 1, primary: true }];
+    renderWaveEditor(); refreshField();
+  });
+}
+function syncWave(newSys) {
+  const wl = (newSys.wavelengths && newSys.wavelengths.length)
+    ? newSys.wavelengths
+    : [{ nm: 587.56, weight: 1, color: '#ffb300' }];
+  waveState = wl.map((w, i) => ({ nm: w.nm, weight: w.weight ?? 1, color: w.color || '', primary: i === newSys.primary }));
+}
+function parseFields(v) {
+  return String(v || '').split(/[,;\s]+/).map(s => parseFloat(s)).filter(n => isFinite(n));
+}
+function updateRays() {
+  rayGroup.clear();
+  let fields = [], fo = null, EP = null, vig = null;
+  try {
+    const wfn = parseFloat(wfnEl?.value);
+    if (isFinite(wfn) && wfn > 0) { sys.fno = wfn; sys.apmode = 'fno'; }
+    const mode = fmodeEl?.value || 'angle';
+    const list = parseFields(fvalsEl?.value); if (!list.length) list.push(0);
+    const nPupil = Math.max(1, Math.min(33, parseInt(npupilEl?.value, 10) || 9)) | 0;
+    const wl = activeLambdas();
+    const res = traceFields(sys, surfaceList, { mode, fields: list, nPupil, lambdas: wl.lambdas, primary: wl.primary, vigCoefs: (sys.vigCoefs || null) });
+    fields = res.fields; EP = res.EP; primaryNm = res.primaryNm;
+    fo = firstOrder(sys, surfaceList);
+    let nRay = 0, nVig = 0;
+    const addLine = (tr, col, edge, alpha) => {
+      if (!tr || !tr.pts) return;
+      const pts = clipPts(tr.pts);
+      if (!pts || pts.length < 2) return;
+      const geo = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+      const vigDim = tr.vignetted ? Math.max(0.1, 0.25) : alpha;
+      rayGroup.add(new THREE.Line(geo, new THREE.LineBasicMaterial({
+        color: edge ? col : 0xffffff, transparent: true,
+        opacity: edge ? Math.min(1, vigDim + 0.15) : vigDim * 0.6,
+      })));
+    };
+    for (const fd of fields) {
+      for (const lam of fd.lams) {
+        const col = cssToHex(lam.color);
+        for (const r of lam.rays) { nRay++; if (r.vignetted) nVig++; addLine(r, col, false, 0.5); }
+        addLine(lam.chief, col, true, lam.primary ? 1.0 : 0.72);
+      }
+    }
+    vig = { nRay, nVig, nField: fields.length };
+    // 像面盘直径跟随视场(像高)：刚好包住各视场光线落点
+    if (lensGroup) {
+      const imgMesh = lensGroup.getObjectByName('imagePlane');
+      if (imgMesh) {
+        let rImg = 4;
+        for (const fd of fields) for (const lam of (fd.lams || [])) {
+          for (const r of (lam.chief ? [lam.chief] : []).concat(lam.rays || [])) if (r && r.imageY != null) rImg = Math.max(rImg, Math.abs(r.imageY));
+        }
+        const R = rImg * 1.12 + 1;
+        if (imgMesh.userData.R !== R) {
+          imgMesh.userData.R = R;
+          imgMesh.geometry.dispose();
+          imgMesh.geometry = new THREE.CircleGeometry(R, 96);
+          const edge = lensGroup.getObjectByName('imagePlaneEdge');
+          if (edge) { edge.geometry.dispose(); edge.geometry = new THREE.EdgesGeometry(new THREE.CircleGeometry(R, 96), 0); }
+        }
+      }
+    }
+  } catch (e) { console.error('追迹报错', e); }
+  lastTrace = { fields, fo, EP, vig, primaryNm };
+  if (renderFo) {
+    const f = fo && isFinite(fo.efl);
+    const ep = EP ? `入瞳⊙${(EP.epd || 0).toFixed(2)}mm` : '';
+    const vt = (vig && vig.nRay) ? `渐晕截断 ${vig.nVig}/${vig.nRay}` : '';
+    const wn = primaryNm ? `@${primaryNm}nm` : '';
+    renderFo.textContent = (f ? `EFL=${fo.efl.toFixed(2)}mm · BFL=${fo.bfl.toFixed(2)}mm · F#${fo.fno.toFixed(2)}` : '追迹—') +
+      (ep ? ` · ${ep}` : '') + (vt ? ` · ${vt}` : '') + (wn ? ` · ${wn}` : '');
+    renderFo.classList.add('show');
+  }
+  if (vigEl) {
+    const ih = fields.map(fd => fd.chief ? (fd.chief.imageY != null ? fd.chief.imageY.toFixed(2) : '—') : '—').join('/');
+    const vigOn = Array.isArray(sys.vigCoefs);
+    vigEl.textContent = (vig && vig.nRay)
+      ? `视场 ${vig.nField} 束 · 光线 ${vig.nRay} · 渐晕 ${vig.nVig} · 像高 ${ih}mm` + (vigOn ? ' · 自动渐晕' : '')
+      : '未追迹';
+    vigEl.classList.toggle('bad', !!(vig && vig.nVig > 0));
+  }
+  if (autoVigBtn) {
+    const on = Array.isArray(sys.vigCoefs);
+    autoVigBtn.textContent = on ? '清除渐晕' : '自动渐晕';
+    autoVigBtn.classList.toggle('active', on);
+  }
+}
+// 把多视场光线收集成 2D 渲染用数组（按波长分色；从首面起，物方不显示）
+function collateFieldRays(fields) {
+  const out = [];
+  for (const fd of fields) {
+    for (const lam of fd.lams) {
+      const c = lam.color || '#ffd633';
+      if (lam.chief) { const pts = clipPts(lam.chief.pts); if (pts && pts.length >= 2) out.push({ pts, color: c, edge: true, alpha: lam.chief.vignetted ? 0.4 : 1.0 }); }
+      for (const r of lam.rays) { const pts = clipPts(r.pts); if (pts && pts.length >= 2) out.push({ pts, color: c, alpha: r.vignetted ? 0.25 : 0.7, dash: r.vignetted ? '4 3' : null }); }
+    }
+  }
+  return out;
+}
+// 裁剪光线到首镜片前表面起（物方不显示）；无 frontZ 时不裁
+function clipPts(pts) {
+  if (!pts || !pts.length) return pts;
+  const c = (frontZ == null) ? -Infinity : (frontZ - 0.5);
+  return pts.filter(p => p.length < 3 || p[2] >= c);
+}
+function cssToHex(c) {
+  let s = String(c || '#ffb300');
+  if (s[0] === '#') {
+    if (s.length === 7) return parseInt(s.slice(1), 16);
+    if (s.length === 4) return parseInt('#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3].slice(1), 16);
+  }
+  return 0xffb300;
+}
+// ---- 点列图（M2b 第一步，参照 Zemax 样式）：每视场一子图、按波长分色、含比例尺/RMS·GEO ----
+// 艾里斑半径(第一暗环) = 1.22·λ·F#  (λ 转成 mm)
+function airyRadius(fno, lambdaUm) {
+  if (!isFinite(lambdaUm) || lambdaUm <= 0) return 0;
+  return 1.22 * (lambdaUm / 1000) * fno;
+}
+
+function setPanelTab(which) {
+  const isSpot = which === 'spot';
+  spotView.classList.toggle('on', isSpot);
+  layout2dEl.classList.toggle('hidden', isSpot);
+  tabLayout.classList.toggle('active', !isSpot);
+  tabSpot.classList.toggle('active', isSpot);
+  if (!isSpot) renderLayout2D(); else updateSpot();
+}
+function populateSpotSelects() {
+  if (spotField) {
+    const list = parseFields(fvalsEl?.value); if (!list.length) list.push(0);
+    const cur = spotField.value;
+    spotField.innerHTML = '<option value="all">全部</option>' + list.map(f => `<option value="${f}">${f}</option>`).join('');
+    spotField.value = (cur && spotField.querySelector(`option[value="${cur}"]`)) ? cur : 'all';
+  }
+  if (spotWavelength) {
+    const wl = activeLambdas().lambdas;
+    const cur = spotWavelength.value;
+    spotWavelength.innerHTML = '<option value="all">全部</option>' + wl.map(w => `<option value="${w.nm}">${Math.round(w.nm)}nm</option>`).join('') + '<option value="primary">主波长</option>';
+    if (!spotWavelength.querySelector(`option[value="${cur}"]`)) spotWavelength.value = 'all';
+  }
+}
+function updateSpot() {
+  if (!spotMain) return;
+  const nGrid = Math.max(5, Math.min(41, parseInt(spotGrid?.value, 10) || 15)) | 0;
+  const wlAll = activeLambdas().lambdas;
+  const pri = wlAll[activeLambdas().primary] || wlAll[0];
+  const wsel = spotWavelength?.value || 'all';
+  const wlList = wsel === 'all' ? wlAll : (wsel === 'primary' ? [pri] : wlAll.filter(w => String(w.nm) === wsel));
+  const fsel = spotField?.value || 'all';
+  const fields = fsel === 'all' ? (parseFields(fvalsEl?.value).length ? parseFields(fvalsEl.value) : [0]) : [+fsel];
+  const spots = [];
+  let gwin = 1e-3;
+  fields.forEach(fv => {
+    const groups = wlList.map(w => {
+      const s = traceSpot(sys, surfaceList, { mode: fmodeEl?.value || 'angle', field: fv, lambdaUm: w.nm / 1000, nGrid });
+      return { nm: w.nm, weight: w.weight, color: w.color || '#ffb300', points: s.points };
+    });
+    // 质心 / RMS / GEO(含全部波长)
+    let cx = 0, cy = 0, n = 0;
+    for (const gr of groups) for (const p of gr.points) { cx += p[0]; cy += p[1]; n++; }
+    n = n || 1; cx /= n; cy /= n;
+    let rms = 0, geo = 0;
+    for (const gr of groups) for (const p of gr.points) { const dx = p[0] - cx, dy = p[1] - cy, d2 = dx * dx + dy * dy; rms += d2; if (d2 > geo) geo = d2; }
+    rms = Math.sqrt(rms / n); geo = Math.sqrt(geo);
+    gwin = Math.max(gwin, geo * 1.6);
+    spots.push({ field: fv, groups, cx, cy, rms, geo, imageY: cy });
+  });
+  const fno = (lastTrace.fo && isFinite(lastTrace.fo.fno)) ? lastTrace.fo.fno : (sys.fno || 0);
+  const airyR = (spotAiry?.checked && fno > 0) ? airyRadius(fno, pri.nm / 1000) : 0;
+  renderSpotSVG(spotMain, spots, wlList, gwin, pri.nm, airyR);
+}
+function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
+  const pad = 10, headerH = 30, cellW = 250, plotSize = 168, titleH = 22, imgH = 20, gap = 14, tableH = 78;
+  const cols = Math.max(1, spots.length);   // 一字排开：每视场一列
+  const rows = Math.ceil(spots.length / cols);
+  const W = pad * 2 + cols * cellW + (cols - 1) * gap;
+  const H = headerH + rows * (plotSize + titleH + imgH + 10) + (rows - 1) * gap + tableH + pad;
+  const mode = fmodeEl?.value || 'angle';
+  const g = [];
+  g.push(`<text x="${pad}" y="18" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">点列图 · 面： 像面</text>`);
+  // 右上波长图例
+  let lx = W - pad - 44;
+  for (let i = wlList.length - 1; i >= 0; i--) {
+    const w = wlList[i];
+    g.push(`<circle cx="${lx + 5}" cy="12" r="4.5" fill="${w.color}"/>`);
+    g.push(`<text x="${lx + 14}" y="16" fill="#9caab4" font-size="10" text-anchor="start" font-family="ui-monospace,monospace">${w.nm.toFixed(2)}</text>`);
+    lx -= 52;
+  }
+  const sc = (plotSize / 2) / win;
+  spots.forEach((s, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = pad + col * (cellW + gap), y = headerH + row * (plotSize + titleH + imgH + 10 + gap);
+    const fieldLabel = mode === 'height' ? `像高: ${s.field.toFixed(2)} (mm)` : `物面: ${s.field.toFixed(2)} (度)`;
+    g.push(`<text x="${x}" y="${y + 12}" fill="#E6EDF1" font-size="11.5" font-family="ui-monospace,monospace">${fieldLabel}</text>`);
+    const px = x, py = y + 16;
+    // 网格背景
+    for (let k = 0; k <= 10; k++) {
+      const off = k / 10 * plotSize;
+      g.push(`<line x1="${(px + off).toFixed(1)}" y1="${py}" x2="${(px + off).toFixed(1)}" y2="${py + plotSize}" stroke="#1b232d" stroke-width="1"/>`);
+      g.push(`<line x1="${px}" y1="${(py + off).toFixed(1)}" x2="${px + plotSize}" y2="${(py + off).toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    }
+    g.push(`<rect x="${px}" y="${py}" width="${plotSize}" height="${plotSize}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+    // 点(按波长分色)；质心为原点
+    const cX = px + plotSize / 2, cY = py + plotSize / 2;
+    for (const gr of s.groups) for (const p of gr.points)
+      g.push(`<circle cx="${(cX + (p[0] - s.cx) * sc).toFixed(2)}" cy="${(cY - (p[1] - s.cy) * sc).toFixed(2)}" r="1.2" fill="${gr.color}" opacity=".92"/>`);
+    g.push(`<circle cx="${cX}" cy="${cY}" r="1.6" fill="#4cc2ff"/>`);
+    if (airyR > 0) g.push(`<circle cx="${cX}" cy="${cY}" r="${(airyR * sc).toFixed(2)}" fill="none" stroke="#3ddc97" stroke-width="1" stroke-dasharray="3 2" opacity=".8"/>`);
+    // 左侧比例尺(窗口半宽 wn=win, 标注盒宽 2*win, μm)
+    const sbX = px - 4;
+    g.push(`<line x1="${sbX}" y1="${py}" x2="${sbX}" y2="${py + plotSize}" stroke="#9caab4" stroke-width="1"/>`);
+    g.push(`<line x1="${sbX - 4}" y1="${py}" x2="${sbX}" y2="${py}" stroke="#9caab4"/>`);
+    g.push(`<text x="${sbX - 5}" y="${py + 4}" fill="#9caab4" font-size="9" text-anchor="end" font-family="ui-monospace,monospace">${(win * 2000).toFixed(0)}</text>`);
+    // 像面
+    g.push(`<text x="${x}" y="${py + plotSize + 18}" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">像面: ${Math.abs(s.imageY || 0).toFixed(3)} mm</text>`);
+  });
+  // 底部 RMS / GEO 表
+  const ty = headerH + rows * (plotSize + titleH + imgH + 10) + (rows - 1) * gap + 6;
+  g.push(`<text x="${pad}" y="${ty + 14}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">视场      : ${spots.map((s, i) => ('' + (i + 1))).join('          ')}</text>`);
+  g.push(`<text x="${pad}" y="${ty + 30}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">RMS 半径  : ${spots.map(s => (s.rms * 1000).toFixed(1)).join('       ')}</text>`);
+  g.push(`<text x="${pad}" y="${ty + 46}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">GEO 半径  : ${spots.map(s => (s.geo * 1000).toFixed(1)).join('       ')}</text>`);
+  g.push(`<text x="${pad}" y="${ty + 64}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">单位 μm · 参考: 主光线 · 窗口 ±${(win * 1000).toFixed(0)}μm @${Math.round(primaryNm)}nm</text>`);
+  el.setAttribute('viewBox', `0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
+  el.innerHTML = g.join('');
+}
+
+
+function svgPoint(e) {
+  const pt = layout2dEl.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  const ctm = layout2dEl.getScreenCTM();
+  return ctm ? pt.matrixTransform(ctm.inverse()) : null;  // viewBox 用户坐标
+}
+function bindLayoutInteractions() {
+  let drag = null;
+  layout2dEl.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    drag = svgPoint(e); if (!drag) return;
+    layout2dEl.setPointerCapture(e.pointerId);
+    layout2dEl.classList.add('dragging');
+    e.preventDefault();
+  });
+  layout2dEl.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const p = svgPoint(e); if (!p) return;
+    layout.tx += p.x - drag.x;
+    layout.ty += p.y - drag.y;
+    drag = p;
+    layoutApply();
+  });
+  const end = () => { drag = null; layout2dEl.classList.remove('dragging'); };
+  layout2dEl.addEventListener('pointerup', end);
+  layout2dEl.addEventListener('pointercancel', end);
+  layout2dEl.addEventListener('wheel', e => {
+    e.preventDefault();
+    const p = svgPoint(e); if (!p) return;
+    const ns = Math.min(8, Math.max(0.2, layout.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    const wx = (p.x - layout.tx) / layout.scale;
+    const wy = (p.y - layout.ty) / layout.scale;
+    layout.scale = ns;
+    layout.tx = p.x - wx * ns;
+    layout.ty = p.y - wy * ns;
+    layoutApply();
+  }, { passive: false });
+}
+bindLayoutInteractions();
+
+// 3D 顶点坐标小窗（实时）
+function updateVertReadout(i) {
+  if (!vertEl) return;
+  if (i == null || !surfaceList.length || !sys.surfaces[i]) { vertEl.innerHTML = '<div class="vr-title">顶点 3D 坐标</div>(未选择面)'; return; }
+  const s = sys.surfaces[i], info = surfaceList[i];
+  const x = (s.decX || 0), y = (s.decY || 0), z = info.z;
+  vertEl.innerHTML =
+    `<div class="vr-title">顶点 3D 坐标 · S${i} ${s.type}</div>` +
+    `<span class="vr-xyz">(x, y, z) = (${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)})</span>`;
+}
+
+function highlightByIndex(i) {
+  if (highlightObj) { scene.remove(highlightObj); highlightObj = null; }
+  if (i == null || !surfaceList.length) return;
+  highlightObj = buildSurfaceMarker(sys, surfaceList, i);
+  scene.add(highlightObj);
+  updateVertReadout(i);
+}
+function clearHighlight() {
+  if (highlightObj) { scene.remove(highlightObj); highlightObj = null; }
+}
+
+function freshSys(value) {
+  sys = typeof value === 'string' ? System.deserialize(value) : value;
+  if (!(sys instanceof System)) sys = System.deserialize(sys);
+  syncWave(sys); renderWaveEditor();
+}
+
+async function rebuildScene(keepCamera = false) {
+  if (lensGroup) { scene.remove(lensGroup); lensGroup = null; }
+  clearHighlight();
+  lensMeshes = [];
+  try {
+    const res = buildSystemGroup(sys);
+    lensGroup = res.group;
+    lensMeshes = res.lensMeshes;
+    surfaceList = res.surfaceList;
+    // 首镜片前表面顶点 z（物方显示裁切起点=第一个光学面）
+    const opts = surfaceList.slice(1, -1).map(s => s && s.z).filter(z => isFinite(z));
+    frontZ = opts.length ? Math.min(...opts) : (surfaceList[1] ? surfaceList[1].z : -50);
+  } catch (e) {
+    console.error(e);
+    lensGroup = new THREE.Group();
+    setStatus('几何构建报错：' + (e && e.message ? e.message : e), false);
+  }
+  scene.add(lensGroup);
+
+  updateRays();   // M2a：追迹并显示子午光路 + 一阶量
+
+  // 相机自动框住镜头（镜片包围盒，忽略光轴长线）；原点=像面中心留一点余量
+  if (!keepCamera) {
+    fitCamera('iso');   // 默认 3/4 等轴测：可同时看到各子午视场(0/14/20°)的扇形与深度
+    setStatus(`已载入 «${sys.name}» · 面 ${sys.surfaces.length} · 镜片 ${lensMeshes.length} 片\n原点=像面中心 · 上方 2D 剖面 · 下方切 3D 视角`, true);
+  } else {
+    setStatus(`已载入 «${sys.name}» · 面数 ${sys.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
+  }
+  renderLayout2D();   // 2D 面板常驻于 3D 上方
+  if (spotView && spotView.classList.contains('on')) updateSpot();   // 点列页激活时同步刷新(含 LDM 改动)
+}
+
+function refreshTable(select) { ldm.render(sys, select); }
+
+function syncAll(select, frame) {
+  rebuildScene(frame);
+  refreshTable(select);
+  if (select != null) highlightByIndex(select);   // 同步高亮 + 顶点坐标小窗
+}
+
+// ---- 三个窗口(LDM/2D/3D)大小可拖拽调整 ----
+const sideEl = document.getElementById('side');
+const sideGrip = document.getElementById('sideGrip');
+const panel2dEl = document.getElementById('panel2d');
+const vGrip = document.getElementById('vGrip');
+const appEl = document.getElementById('app');
+function makeResize(grip, onMove) {
+  if (!grip) return;
+  grip.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('drag');
+    const move = ev => onMove(ev);
+    const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.classList.remove('drag'); };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+  });
+}
+makeResize(sideGrip, ev => {   // 调 LDM(左栏)宽度
+  const w = Math.max(320, Math.min(900, ev.clientX));
+  if (sideEl) { sideEl.style.width = w + 'px'; sideEl.style.flex = '0 0 auto'; }
+  resize();
+});
+makeResize(vGrip, ev => {      // 调 2D/点列 面板高度(3D 随之)
+  const top = (appEl ? appEl.getBoundingClientRect().top : 0);
+  const h = Math.max(120, Math.min(800, ev.clientY - top - 6));
+  if (panel2dEl) { panel2dEl.style.height = h + 'px'; panel2dEl.style.flex = '0 0 auto'; }
+  resize();
+});
+
+const ldm = new LDM(document.getElementById('ldm'), {
+  onChange: () => { sys = ldm.sys; ldm.render(sys, ldm.selected); rebuildScene(true); highlightByIndex(ldm.selected); },   // 撤销/结构操作：表格+图表都重渲染
+  onSelect: (i) => highlightByIndex(i),
+});
+ldm.init(() => { ldm.render(ldm.sys, ldm.selected); }, () => { sys = ldm.sys; rebuildScene(true); highlightByIndex(ldm.selected); });   // 单元格编辑：只重建图表，避免打字丢焦点
+
+// 一键刷新：LDM 表格 + 2D + 3D + 点列图 全部重新渲染
+const refreshBtn = document.getElementById('refreshBtn');
+if (refreshBtn) refreshBtn.addEventListener('click', () => { sys = ldm.sys; rebuildScene(true); refreshTable(ldm.selected); });
+
+// ---------- 控件 ----------
+// 顶部动作
+function loadCurrent() {
+  const make = DEMO_LENSES[demoSel.value] || demoSingleElement;
+  freshSys(make());
+  syncAll(0);
+}
+document.getElementById('newDemo').addEventListener('click', loadCurrent);
+demoSel.addEventListener('change', loadCurrent);
+// 重置视角 = 回到 Y-Z 剖面，且之后仍可用左键拖动视角（OrbitControls 始终可用）
+resetBtn.addEventListener('click', () => fitCamera('yz'));
+document.getElementById('viewSeg').addEventListener('click', e => {
+  const b = e.target.closest('.vbtn');
+  if (b) fitCamera(b.dataset.view);
+});
+
+// M2a-2：视场/光线数控件 -> 重新追迹
+const refreshField = () => {
+  rebuildScene(true); renderLayout2D();
+  if (spotView && spotView.classList.contains('on')) populateSpotSelects();   // 下拉随视场/波长更新; 点列由 rebuildScene 刷新
+};
+for (const el of [fmodeEl, fvalsEl, npupilEl, wfnEl]) {
+  if (el) { el.addEventListener('input', refreshField); el.addEventListener('change', refreshField); }
+}
+// 点列图按钮 / 标签页：点列图与 2D 光路共享 panel2d（可切换）
+if (spotBtn) spotBtn.addEventListener('click', () => { populateSpotSelects(); setPanelTab('spot'); });
+if (tabLayout) tabLayout.addEventListener('click', () => setPanelTab('layout'));
+if (tabSpot) tabSpot.addEventListener('click', () => { populateSpotSelects(); setPanelTab('spot'); });
+for (const el of [spotGrid, spotField, spotWavelength, spotAiry]) {
+  if (el) el.addEventListener('input', () => updateSpot());
+}
+if (autoVigBtn) autoVigBtn.addEventListener('click', () => {
+  const on = Array.isArray(sys.vigCoefs);
+  try {
+    if (on) { sys.vigCoefs = null; }
+    else {
+      const list = parseFields(fvalsEl?.value); if (!list.length) list.push(0);
+      const prim = activeLambdas().lambdas[activeLambdas().primary]?.nm ?? 587.56;
+      const lamUm = prim / 1000;
+      const fno0 = isFinite(sys.fno) && sys.fno > 0 ? sys.fno : null;
+      let coefs = autoVignette(sys, surfaceList, { mode: fmodeEl?.value || 'angle', fields: list, lambdaUm: lamUm }) || [];
+      // 光带超出净口径（轴视场窗口<1）：重算工作F数，使光带占满净口径，再重算渐晕
+      if (coefs.length && coefs[0] && fno0 != null) {
+        const c = coefs[0];
+        const win = Math.min(c.yHi, -c.yLo, c.xHi, -c.xLo);
+        if (win < 0.9995) {
+          const fnoNew = fno0 / win;               // F#=EFL/EPD，EPD∝1/F#
+          sys.fno = fnoNew; sys.apmode = 'fno';
+          if (wfnEl) wfnEl.value = +fnoNew.toFixed(2);
+          coefs = autoVignette(sys, surfaceList, { mode: fmodeEl?.value || 'angle', fields: list, lambdaUm: lamUm }) || [];
+        }
+      }
+      sys.vigCoefs = coefs.length ? coefs : null;
+      if (!sys.vigCoefs) console.error('自动渐晕：未算出有效系数');
+    }
+    rebuildScene(true); renderLayout2D();
+  } catch (e) { console.error('自动渐晕报错', e); setStatus('自动渐晕报错：' + (e && e.message || e), false); }
+});
+bindWaveEditor();
+
+importBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  const f = fileInput.files && fileInput.files[0];
+  if (!f) return;
+  try {
+    const ns = importFile(f.name, lensTextFromBuffer(await f.arrayBuffer()));
+    if (!ns) throw new Error('无法识别的文件格式，仅支持 .zmx / .seq');
+    freshSys(ns);
+    // 先同步左侧面板(视场/模式/波长 -> DOM 与 waveState)，再追迹。
+    // 否则 updateRays 读到的是上一系统的 fvals/waveState，导致首屏追迹用错视场/波长(需再刷新才对)。
+    applyPanelFromSys();
+    syncAll(0);
+    const warn = (ns.warnings && ns.warnings.length) ? ' · 提示 ' + ns.warnings.join('；') : '';
+    setStatus(`导入 ${f.name} · 面数 ${sys.surfaces.length}${warn}`, true);
+  } catch (e) { fail(e); }
+});
+
+window.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); ldm.undo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); ldm.redo(); }
+});
+
+function resize() {
+  // 3D 画布只占下方 #stage3d 区域
+  const r = document.getElementById('stage3d').getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  renderLayout2D();   // 2D 面板常驻，按新尺寸重新取景
+}
+window.addEventListener('resize', resize);
+
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+
+window.addEventListener('error', ev => fail(ev.error || ev.message));
+window.addEventListener('unhandledrejection', ev => fail(ev.reason));
+
+// ---------- 启动 ----------
+// 默认显示本地示例 Zemax 文件（UTF-16LE）；失败回退到内置单片双凸。
+const DEFAULT_ZMX = { dir: '测试zemax文件', file: 'Cooke 40 degree field.zmx' };
+async function loadDefault() {
+  // 相对路径(../)而非绝对(/), 兼容本地服务与 GitHub Pages 子路径(如 /<repo>/lens-3d/)部署。
+  // 本地: /lens-3d/ -> ../测试zemax文件/... = /测试zemax文件/... ; Pages: /repo/lens-3d/ -> /repo/测试zemax文件/...
+  const url = '../' + encodeURIComponent(DEFAULT_ZMX.dir) + '/' + encodeURIComponent(DEFAULT_ZMX.file);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const ns = importFile(DEFAULT_ZMX.file, lensTextFromBuffer(await r.arrayBuffer()));
+    if (!ns) throw new Error('解析失败');
+    freshSys(ns);
+    applyPanelFromSys();
+    syncAll(0);
+    resize();
+    setStatus(`默认载入 «${sys.name}» · 面 ${sys.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
+  } catch (e) {
+    console.error('默认文件载入失败，回退 demo', e);
+    freshSys(demoSingleElement());
+    syncAll(0);
+    resize();
+  }
+}
+loadDefault();

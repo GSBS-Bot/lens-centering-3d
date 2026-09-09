@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lens-3D · M1 镜头数据管理器</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="side">
+      <div class="side-head">
+        <div class="side-title">镜头数据管理器（动态调芯模拟）</div>
+        <div class="side-sub">M1+ · LDM 表格直接编辑 · 2D/3D 实时同步</div>
+      </div>
+
+      <div class="topbar">
+        <select id="demoSelect">
+          <option value="single">单片双凸物镜 (F=50mm)</option>
+          <option value="planoconvex">平凸物镜 (F=80mm)</option>
+          <option value="blank">空白系统 (手动搭)</option>
+        </select>
+        <button id="importFile" class="btn">导入 .zmx/.seq</button>
+        <input id="fileInput" type="file" accept=".zmx,.seq" hidden>
+        <button id="newDemo" class="btn ghost">重置</button>
+      </div>
+
+      <div class="fieldbar">
+        <label title="Zemax 视场=半视场角(半FOV)。全视场=2×半视场角。如半视场20°=全视场40°。">视场模式
+          <select id="fmode">
+            <option value="angle" selected>半视场角 °</option>
+            <option value="height">像高 mm</option>
+          </select>
+        </label>
+        <label title="逗号分隔多视场（半视场角° 或 像高mm，按读取的文件值）">值
+          <input id="fvals" type="text" value="0" spellcheck="false">
+        </label>
+        <label title="每个视场的光线数(入瞳内,上取奇数)">光线数
+          <input id="npupil" type="number" value="9" min="1" max="33" step="2">
+        </label>
+        <label title="像方工作F/#：入瞳直径=|EFL|/F#">工作F数
+          <input id="wfn" type="number" value="8" placeholder="空=由光阑定" min="0.5" step="0.1">
+        </label>
+        <button id="autoVig" type="button" title="按净口径/半孔径自动计算逐视场渐晕(被渐晕光线不显示)">自动渐晕</button>
+        <button id="spotBtn" type="button" title="显示/隐藏点列图(各视场在像面的光线落点)">点列图</button>
+        <button id="refreshBtn" type="button" title="一键刷新：表格/2D/3D/点列图 全部重渲染">刷新</button>
+        <span id="fieldVig" class="vig">未追迹</span>
+      </div>
+
+      <div class="wlbar">
+        <div class="wl-head">
+          <span>波长 / 权重</span>
+          <button id="wlAdd" type="button">＋ 添加</button>
+          <button id="wlPreset" type="button" title="F/d/C 三色(色散)">F/d/C</button>
+          <button id="wlOnly" type="button" title="只保留主波长">仅主</button>
+        </div>
+        <div id="wltable" class="wl-table"></div>
+        <div class="wl-note">●主波长用于 EFL/F#·像高；权重用于后续 MTF/点列平均；按波长分色展示</div>
+      </div>
+
+      <div id="ldm" class="ldm-root"></div>
+    </aside>
+    <div id="sideGrip" class="grip-v" title="拖动调整左侧(LDM)窗口宽度"></div>
+
+    <main id="stage">
+      <section id="panel2d">
+        <div class="panel-head">
+          <div class="tabs">
+            <button id="tabLayout" class="tab active" type="button">2D 光路</button>
+            <button id="tabSpot" class="tab" type="button">点列图</button>
+          </div>
+          <span id="layoutBadge" class="layoutBadge"></span>
+        </div>
+        <div class="panel2d-body">
+          <svg id="layout2d"></svg>
+          <div id="spotView" class="spotView">
+            <div class="spot-ctrl">
+              <label title="入瞳内采样网格密度">网格 <input id="spotGrid" type="number" value="15" min="5" max="41" step="2"></label>
+              <label title="显示哪些视场">场 <select id="spotField"><option value="all">全部</option></select></label>
+              <label title="用哪个波长">波长 <select id="spotWavelength"><option value="primary">主波长</option></select></label>
+              <label title="绘制艾里斑(衍射极限)参考圆"><input id="spotAiry" type="checkbox" checked> 艾里斑</label>
+            </div>
+            <svg id="spotMain"></svg>
+          </div>
+        </div>
+      </section>
+      <div id="vGrip" class="grip-h" title="拖动调整 2D/点列图 与 3D 高度"></div>
+      <section id="stage3d">
+        <canvas id="view"></canvas>
+        <div id="hud" class="hud">
+          <div class="title">Lens-3D · M1+</div>
+          <div class="status">Three.js 加载中…</div>
+          <div id="fo" class="fo"></div>
+        </div>
+        <div id="vertReadout" class="vertReadout">顶点 3D 坐标</div>
+        <div id="toolbar" class="toolbar">
+          <div class="seg" id="viewSeg">
+            <button data-view="iso" class="vbtn active" type="button">等轴测</button>
+            <button data-view="xy" class="vbtn" type="button">X-Y</button>
+            <button data-view="yz" class="vbtn" type="button">Y-Z</button>
+            <button data-view="xz" class="vbtn" type="button">X-Z</button>
+          </div>
+          <span class="sep"></span>
+          <button id="resetView" type="button">重置视角(Y-Z)</button>
+          <a id="backLauncher" class="btn-link" href="../启动.html">返回启动台</a>
+          <span class="sep"></span>
+          <span class="hint">左键旋转 · 右键/滚轮缩放 · 中键平移</span>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
