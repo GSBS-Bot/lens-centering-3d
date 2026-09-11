@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Lens-3D · M1 镜头数据管理器</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -42,8 +45,7 @@
           <input id="wfn" type="number" value="8" placeholder="空=由光阑定" min="0.5" step="0.1">
         </label>
         <button id="autoVig" type="button" title="按净口径/半孔径自动计算逐视场渐晕(被渐晕光线不显示)">自动渐晕</button>
-        <button id="spotBtn" type="button" title="显示/隐藏点列图(各视场在像面的光线落点)">点列图</button>
-        <button id="refreshBtn" type="button" title="一键刷新：表格/2D/3D/点列图 全部重渲染">刷新</button>
+        <button id="refreshBtn" type="button" title="一键刷新：表格/2D/3D/当前图表(点列图/相对照度/MTF) 全部重渲染">刷新</button>
         <span id="fieldVig" class="vig">未追迹</span>
       </div>
 
@@ -68,6 +70,8 @@
           <div class="tabs">
             <button id="tabLayout" class="tab active" type="button">2D 光路</button>
             <button id="tabSpot" class="tab" type="button">点列图</button>
+            <button id="tabIllum" class="tab" type="button">相对照度</button>
+            <button id="tabMtf" class="tab" type="button">MTF</button>
           </div>
           <span id="layoutBadge" class="layoutBadge"></span>
         </div>
@@ -81,6 +85,24 @@
               <label title="绘制艾里斑(衍射极限)参考圆"><input id="spotAiry" type="checkbox" checked> 艾里斑</label>
             </div>
             <svg id="spotMain"></svg>
+          </div>
+          <div id="illumView" class="spotView">
+            <div class="spot-ctrl">
+              <label title="入瞳内采样网格密度(圆内)">网格 <input id="illumGrid" type="number" value="15" min="5" max="41" step="2"></label>
+              <label title="沿视场均匀取的点数">视场点 <input id="illumN" type="number" value="13" min="3" max="41" step="2"></label>
+              <label title="用哪个波长(相对照度通常看主波长)">波长 <select id="illumWavelength"><option value="primary">主波长</option></select></label>
+            </div>
+            <svg id="illumMain"></svg>
+          </div>
+          <div id="mtfView" class="spotView">
+            <div class="spot-ctrl">
+              <label title="MTF 算法">算法 <select id="mtfAlgo"><option value="geo">几何</option><option value="diff">波前(衍射)</option></select></label>
+              <label title="显示哪些视场">场 <select id="mtfField"><option value="all">全部</option></select></label>
+              <label title="入瞳采样网格密度">网格 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
+              <label title="横轴最高空间频率">最高频率 <input id="mtfNu" type="number" value="100" min="10" max="1000" step="10"> lp/mm</label>
+              <label title="用哪个/哪些波长（全部=复色）">波长 <select id="mtfWavelength"><option value="all">全部</option><option value="primary">主波长</option></select></label>
+            </div>
+            <svg id="mtfMain"></svg>
           </div>
         </div>
       </section>
@@ -109,6 +131,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=0.8.4"></script>
 </body>
 </html>

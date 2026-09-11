@@ -1,7 +1,7 @@
 // geom.js — 用面数据生成镜片回转体，并负责表面高亮与像面显示
 // 坐标约定：原点 = 像面中心，光轴 = +Z，像面 z=0，镜头位于 z<0（物方）侧。
-import * as THREE from '../vendor/three/three.module.js';
-import { surfaceSag, SURF } from './model.js';
+import * as THREE from '../vendor/three/three.module.js?v=0.8.4';
+import { surfaceSag, SURF } from './model.js?v=0.8.4';
 
 // 面顶点 z（相对系统原点=物面）。为把原点移到“像面中心”，整体减去像面顶点 z。
 // 注意 surfaceZ(i) 在 model.js 里已跳过物面(下标0)的无穷厚物距。

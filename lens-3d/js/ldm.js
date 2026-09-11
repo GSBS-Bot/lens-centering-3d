@@ -1,5 +1,5 @@
 // ldm.js — LDM 面表格 UI（M1）。view 不含计算，只知道"读了 sys，改了 sys，触发 onChange"。
-import { Surface, System, SURF, makeElement } from './model.js';
+import { Surface, System, SURF, makeElement } from './model.js?v=0.8.4';
 
 const TYPE_LABEL = {
   [SURF.OBJECT]: '物面', [SURF.STO]: '光阑', [SURF.IMAGE]: '像面',

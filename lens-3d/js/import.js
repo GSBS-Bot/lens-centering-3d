@@ -1,5 +1,5 @@
 // import.js — .zmx / .seq 导入器（M1 基础版：读取常用关键词）
-import { Surface, System, SURF } from './model.js';
+import { Surface, System, SURF } from './model.js?v=0.8.4';
 
 function fixGlass(g) {
   if (!g) return 'AIR';

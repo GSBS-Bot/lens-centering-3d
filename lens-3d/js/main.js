@@ -1,11 +1,12 @@
 // main.js — M1 接线：数据模型 -> LDM 表格 + 3D 双向同步
-import * as THREE from '../vendor/three/three.module.js';
-import { OrbitControls } from '../vendor/three/OrbitControls.js';
-import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js';
-import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge } from './geom.js';
-import { LDM } from './ldm.js';
-import { importFile } from './import.js';
-import { traceFields, firstOrder, autoVignette, traceSpot } from './trace.js';
+import * as THREE from '../vendor/three/three.module.js?v=0.8.4';
+import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
+import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
+import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge } from './geom.js?v=0.8.4';
+import { LDM } from './ldm.js?v=0.8.4';
+import { importFile } from './import.js?v=0.8.4';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=0.8.4';
+import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil } from './mtf.js?v=0.8.4';
 
 const STATUS = document.querySelector('.status');
 const renderFo = document.getElementById('fo');
@@ -18,15 +19,28 @@ const fvalsEl = document.getElementById('fvals');
 const npupilEl = document.getElementById('npupil');
 const wfnEl = document.getElementById('wfn');
 const autoVigBtn = document.getElementById('autoVig');
-const spotBtn = document.getElementById('spotBtn');
 const tabLayout = document.getElementById('tabLayout');
 const tabSpot = document.getElementById('tabSpot');
+const tabIllum = document.getElementById('tabIllum');
 const spotView = document.getElementById('spotView');
 const spotMain = document.getElementById('spotMain');
 const spotGrid = document.getElementById('spotGrid');
 const spotField = document.getElementById('spotField');
 const spotWavelength = document.getElementById('spotWavelength');
 const spotAiry = document.getElementById('spotAiry');
+const illumView = document.getElementById('illumView');
+const illumMain = document.getElementById('illumMain');
+const illumGrid = document.getElementById('illumGrid');
+const illumN = document.getElementById('illumN');
+const illumWavelength = document.getElementById('illumWavelength');
+const tabMtf = document.getElementById('tabMtf');
+const mtfView = document.getElementById('mtfView');
+const mtfMain = document.getElementById('mtfMain');
+const mtfAlgo = document.getElementById('mtfAlgo');
+const mtfField = document.getElementById('mtfField');
+const mtfGrid = document.getElementById('mtfGrid');
+const mtfNu = document.getElementById('mtfNu');
+const mtfWavelength = document.getElementById('mtfWavelength');
 const vigEl = document.getElementById('fieldVig');
 
 function setStatus(msg, ok) {
@@ -258,7 +272,7 @@ function updateRays() {
     const res = traceFields(sys, surfaceList, { mode, fields: list, nPupil, lambdas: wl.lambdas, primary: wl.primary, vigCoefs: (sys.vigCoefs || null) });
     fields = res.fields; EP = res.EP; primaryNm = res.primaryNm;
     fo = firstOrder(sys, surfaceList);
-    let nRay = 0, nVig = 0;
+    let nRay = 0, nVig = 0, nSample = 0, nTrace = 0;
     const addLine = (tr, col, edge, alpha) => {
       if (!tr || !tr.pts) return;
       const pts = clipPts(tr.pts);
@@ -273,11 +287,14 @@ function updateRays() {
     for (const fd of fields) {
       for (const lam of fd.lams) {
         const col = cssToHex(lam.color);
-        for (const r of lam.rays) { nRay++; if (r.vignetted) nVig++; addLine(r, col, false, 0.5); }
+        for (const r of lam.rays) { nRay++; addLine(r, col, false, 0.5); }
+        nSample += lam.nSample || 0;
+        nVig += lam.nVig || 0;
+        nTrace += lam.nTrace || 0;
         addLine(lam.chief, col, true, lam.primary ? 1.0 : 0.72);
       }
     }
-    vig = { nRay, nVig, nField: fields.length };
+    vig = { nRay, nVig, nSample, nTrace, nField: fields.length };
     // 像面盘直径跟随视场(像高)：刚好包住各视场光线落点
     if (lensGroup) {
       const imgMesh = lensGroup.getObjectByName('imagePlane');
@@ -301,7 +318,7 @@ function updateRays() {
   if (renderFo) {
     const f = fo && isFinite(fo.efl);
     const ep = EP ? `入瞳⊙${(EP.epd || 0).toFixed(2)}mm` : '';
-    const vt = (vig && vig.nRay) ? `渐晕截断 ${vig.nVig}/${vig.nRay}` : '';
+    const vt = (vig && vig.nSample) ? `渐晕截断 ${vig.nVig}/${vig.nTrace}/${vig.nSample}` : '';
     const wn = primaryNm ? `@${primaryNm}nm` : '';
     renderFo.textContent = (f ? `EFL=${fo.efl.toFixed(2)}mm · BFL=${fo.bfl.toFixed(2)}mm · F#${fo.fno.toFixed(2)}` : '追迹—') +
       (ep ? ` · ${ep}` : '') + (vt ? ` · ${vt}` : '') + (wn ? ` · ${wn}` : '');
@@ -310,8 +327,8 @@ function updateRays() {
   if (vigEl) {
     const ih = fields.map(fd => fd.chief ? (fd.chief.imageY != null ? fd.chief.imageY.toFixed(2) : '—') : '—').join('/');
     const vigOn = Array.isArray(sys.vigCoefs);
-    vigEl.textContent = (vig && vig.nRay)
-      ? `视场 ${vig.nField} 束 · 光线 ${vig.nRay} · 渐晕 ${vig.nVig} · 像高 ${ih}mm` + (vigOn ? ' · 自动渐晕' : '')
+    vigEl.textContent = (vig && vig.nSample)
+      ? `视场 ${vig.nField} 束 · 被截断/实际追迹/总 ${vig.nVig}/${vig.nTrace}/${vig.nSample} · 显示 ${vig.nRay} · 像高 ${ih}mm` + (vigOn ? ' · 自动渐晕' : '')
       : '未追迹';
     vigEl.classList.toggle('bad', !!(vig && vig.nVig > 0));
   }
@@ -355,12 +372,22 @@ function airyRadius(fno, lambdaUm) {
 }
 
 function setPanelTab(which) {
+  const isLayout = which === 'layout';
   const isSpot = which === 'spot';
-  spotView.classList.toggle('on', isSpot);
-  layout2dEl.classList.toggle('hidden', isSpot);
-  tabLayout.classList.toggle('active', !isSpot);
-  tabSpot.classList.toggle('active', isSpot);
-  if (!isSpot) renderLayout2D(); else updateSpot();
+  const isIllum = which === 'illum';
+  const isMtf = which === 'mtf';
+  layout2dEl.classList.toggle('hidden', !isLayout);
+  if (spotView) spotView.classList.toggle('on', isSpot);
+  if (illumView) illumView.classList.toggle('on', isIllum);
+  if (mtfView) mtfView.classList.toggle('on', isMtf);
+  if (tabLayout) tabLayout.classList.toggle('active', isLayout);
+  if (tabSpot) tabSpot.classList.toggle('active', isSpot);
+  if (tabIllum) tabIllum.classList.toggle('active', isIllum);
+  if (tabMtf) tabMtf.classList.toggle('active', isMtf);
+  if (isLayout) renderLayout2D();
+  else if (isSpot) updateSpot();
+  else if (isIllum) updateIllum();
+  else if (isMtf) updateMtf();
 }
 function populateSpotSelects() {
   if (spotField) {
@@ -462,6 +489,211 @@ function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
 }
 
 
+// ---- 相对照度（一维）: 逐视场采样 -> 曲线 ----
+function populateIllumSelects() {
+  if (!illumWavelength) return;
+  const wl = activeLambdas().lambdas;
+  const cur = illumWavelength.value;
+  illumWavelength.innerHTML = '<option value="primary">主波长</option>' +
+    wl.map(w => `<option value="${w.nm}">${Math.round(w.nm)}nm</option>`).join('');
+  if (cur && illumWavelength.querySelector(`option[value="${cur}"]`)) illumWavelength.value = cur;
+}
+function updateIllum() {
+  if (!illumMain) return;
+  const nGrid = Math.max(5, Math.min(41, parseInt(illumGrid?.value, 10) || 15)) | 0;
+  const nf = Math.max(3, Math.min(41, parseInt(illumN?.value, 10) || 13)) | 0;
+  const mode = fmodeEl?.value || 'angle';
+  const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
+  let fmax = Math.max(...baseList.map(Math.abs), 0);
+  if (!(fmax > 0)) fmax = (isFinite(sys.maxField) && sys.maxField > 0) ? sys.maxField : (mode === 'height' ? 10 : 20);
+  const set = new Set();
+  for (let k = 0; k < nf; k++) set.add(fmax * k / (nf - 1));
+  for (const f of baseList) set.add(Math.abs(f));            // 设计视场点也精确取样
+  const fields = [...set].sort((a, b) => a - b);
+  const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
+  const wsel = illumWavelength?.value || 'primary';
+  const w = (wsel === 'primary') ? pri : (wlAll.find(x => String(x.nm) === wsel) || pri);
+  const res = traceIllumination(sys, surfaceList, { mode, fields, nGrid, lambdaUm: (w.nm || 587.56) / 1000 });
+  renderIllumSVG(illumMain, res, baseList, mode, w.nm || 587.56);
+}
+function renderIllumSVG(el, res, designFields, mode, nm) {
+  const W = 620, H = 350, ml = 56, mr = 22, mt = 38, mb = 74;
+  const pw = W - ml - mr, ph = H - mt - mb;
+  const items = (res.items || []).filter(o => o.ok);
+  const fmax = items.length ? Math.max(...items.map(o => o.field), 1e-9) : 1;
+  const xs = (f) => ml + (fmax > 0 ? f / fmax : 0) * pw;
+  const ys = (ri) => mt + (1 - Math.max(0, Math.min(1, ri))) * ph;
+  const g = [];
+  const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
+  g.push(`<text x="${ml - 44}" y="20" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">相对照度图 · 面： 像面</text>`);
+  g.push(`<text x="${W - mr}" y="20" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">@${Math.round(nm)}nm · ${unit}</text>`);
+  for (let k = 0; k <= 5; k++) {
+    const ri = k / 5, y = ys(ri);
+    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(ri * 100).toFixed(0)}%</text>`);
+  }
+  const nxt = 6;
+  for (let k = 0; k <= nxt; k++) {
+    const f = fmax * k / nxt, x = xs(f);
+    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(fmax < 5 ? 2 : 1)}</text>`);
+  }
+  g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  if (items.length >= 2) {
+    g.push(`<polyline points="${items.map(o => `${xs(o.field).toFixed(1)},${ys(o.cos4).toFixed(1)}`).join(' ')}" fill="none" stroke="#6D7B86" stroke-width="1.2" stroke-dasharray="4 3" opacity=".9"/>`);
+    g.push(`<polyline points="${items.map(o => `${xs(o.field).toFixed(1)},${ys(o.RI).toFixed(1)}`).join(' ')}" fill="none" stroke="#4cc2ff" stroke-width="2"/>`);
+  }
+  for (const o of items) g.push(`<circle cx="${xs(o.field).toFixed(1)}" cy="${ys(o.RI).toFixed(1)}" r="1.6" fill="#4cc2ff"/>`);
+  for (const f of designFields) {
+    const o = nearest(items, Math.abs(+f));
+    if (o) g.push(`<circle cx="${xs(o.field).toFixed(1)}" cy="${ys(o.RI).toFixed(1)}" r="3.4" fill="none" stroke="#3ddc97" stroke-width="1.3"/>`);
+  }
+  // 图例
+  const ly = H - 34;
+  g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#4cc2ff" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">相对照度 RI</text>`);
+  g.push(`<line x1="${ml + 122}" y1="${ly}" x2="${ml + 144}" y2="${ly}" stroke="#6D7B86" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${ml + 150}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">cos⁴θ 自然渐晕</text>`);
+  g.push(`<circle cx="${ml + 288}" cy="${ly}" r="3.4" fill="none" stroke="#3ddc97" stroke-width="1.3"/><text x="${ml + 296}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">设计视场</text>`);
+  // 设计视场读数表
+  const dv = designFields.map(f => {
+    const o = nearest(items, Math.abs(+f));
+    return o ? `${(+f).toFixed(2)}→${(o.RI * 100).toFixed(1)}%` : '—';
+  }).join('   ');
+  g.push(`<text x="${ml}" y="${H - 10}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">设计视场 RI： ${dv}</text>`);
+  el.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  el.innerHTML = g.join('');
+}
+function nearest(items, f) {
+  let best = null, bd = Infinity;
+  for (const o of items) { const d = Math.abs(o.field - f); if (d < bd) { bd = d; best = o; } }
+  return best;
+}
+
+// ---- MTF（几何）：点列 -> 相位和 -> MTF-频率曲线 + 衍射极限参考 ----
+function populateMtfSelects() {
+  if (mtfField) {
+    const list = parseFields(fvalsEl?.value); if (!list.length) list.push(0);
+    const cur = mtfField.value;
+    mtfField.innerHTML = '<option value="all">全部</option>' + list.map(f => `<option value="${f}">${f}</option>`).join('');
+    mtfField.value = (cur && mtfField.querySelector(`option[value="${cur}"]`)) ? cur : 'all';
+  }
+  if (mtfWavelength) {
+    const wl = activeLambdas().lambdas; const cur = mtfWavelength.value;
+    mtfWavelength.innerHTML = '<option value="all">全部</option><option value="primary">主波长</option>' + wl.map(w => `<option value="${w.nm}">${Math.round(w.nm)}nm</option>`).join('');
+    mtfWavelength.value = (cur && mtfWavelength.querySelector(`option[value="${cur}"]`)) ? cur : 'all';
+  }
+}
+function mtfHex(n) { return '#' + (n >>> 0).toString(16).padStart(6, '0'); }
+function updateMtf() {
+  if (!mtfMain) return;
+  const nGrid = Math.max(7, Math.min(41, parseInt(mtfGrid?.value, 10) || 21)) | 0;
+  const nuMax = Math.max(10, Math.min(1000, parseFloat(mtfNu?.value) || 100));
+  const mode = fmodeEl?.value || 'angle';
+  const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
+  const fsel = mtfField?.value || 'all';
+  const fields = fsel === 'all' ? baseList : [+fsel];
+  const algo = mtfAlgo?.value || 'geo';
+  const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
+  const wsel = mtfWavelength?.value || 'all';
+  const wlList = wsel === 'all' ? wlAll
+    : (wsel === 'primary' ? [pri] : wlAll.filter(w => String(w.nm) === wsel));
+  const nmPri = pri.nm || 587.56;
+  const fno = (lastTrace.fo && isFinite(lastTrace.fo.fno)) ? lastTrace.fo.fno : (sys.fno || 0);
+  const nuC = fno > 0 ? 1 / ((nmPri / 1e6) * fno) : 0;          // 衍射截止(主波长) lp/mm
+  const NF = 61; const nus = []; for (let i = 0; i < NF; i++) nus.push(nuMax * i / (NF - 1));
+  const nSets = wlList.length;
+  const sets = fields.map(fv => {
+    const items = [];
+    let refX, refY;                                   // 复色：各波长共用同一 OPD 参考球心(否则相对相位乱)
+    for (const w of wlList) {
+      const lam = (w.nm || 587.56) / 1000;
+      if (algo === 'diff') {
+        const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid: 64, refX, refY });
+        if (!wv.ok) continue;
+        if (refX == null) { refX = wv.cx; refY = wv.cy; }
+        items.push({ kind: 'diff', otf: otfFromPupil(wv.re, wv.im, wv.N), N: wv.N, R: wv.R, nuC: wv.nuC, weight: w.weight ?? 1 });
+      } else {
+        const pts = (traceSpot(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid }).points) || [];
+        items.push({ kind: 'geo', pts, weight: w.weight ?? 1 });
+      }
+    }
+    const sw = items.reduce((a, b) => a + (b.weight || 1), 0) || 1;
+    const T = new Array(nus.length).fill(0), S = new Array(nus.length).fill(0);
+    for (let q = 0; q < nus.length; q++) {
+      let rT = 0, iT = 0, rS = 0, iS = 0;
+      for (const it of items) {
+        const w = (it.weight || 1) / sw;
+        if (it.kind === 'diff') {
+          const s = it.nuC > 0 ? nus[q] / it.nuC : (nus[q] > 0 ? 1 : 0);
+          const cT = sampleOtfComplex(it.otf, it.N, it.R, s, 'T');
+          const cS = sampleOtfComplex(it.otf, it.N, it.R, s, 'S');
+          rT += w * cT.re; iT += w * cT.im; rS += w * cS.re; iS += w * cS.im;
+        } else {
+          const cT = geometricOTFComplex(it.pts, nus[q], 'y');
+          const cS = geometricOTFComplex(it.pts, nus[q], 'x');
+          rT += w * cT.re; iT += w * cT.im; rS += w * cS.re; iS += w * cS.im;
+        }
+      }
+      T[q] = Math.min(1, Math.hypot(rT, iT)); S[q] = Math.min(1, Math.hypot(rS, iS));
+    }
+    return { field: +fv, n: items.length, T, S };
+  });
+  const wlLabel = wsel === 'all' ? `复色 · ${nSets} 波长` : `@${Math.round(nmPri)}nm`;
+  if (wsel !== 'all' && nSets === 1 && String(wlList[0].nm) !== String(nmPri)) { /* 单波长(非主) */ }
+  renderMtfSVG(mtfMain, { nus, sets, nuMax, nuC, nm: nmPri, fno, mode, algo, wlLabel });
+}
+function renderMtfSVG(el, d) {
+  const W = 660, H = 380, ml = 56, mr = 24, mt = 40, mb = 92;
+  const pw = W - ml - mr, ph = H - mt - mb;
+  const xs = nu => ml + (d.nuMax > 0 ? nu / d.nuMax : 0) * pw;
+  const ys = m => mt + (1 - Math.max(0, Math.min(1, m))) * ph;
+  const g = [];
+  const unit = d.mode === 'height' ? '像高 mm' : '半视场角 °';
+  g.push(`<text x="${ml - 44}" y="20" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">MTF 图（${d.algo === 'diff' ? '波前 · 衍射 FFT' : '几何 · 由点列算'}） · 面： 像面</text>`);
+  g.push(`<text x="${W - mr}" y="20" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">${d.wlLabel || ('@' + Math.round(d.nm) + 'nm')} · F#${d.fno > 0 ? d.fno.toFixed(2) : '—'} · 截止 ${d.nuC > 0 ? Math.round(d.nuC) : '—'} lp/mm</text>`);
+  for (let k = 0; k <= 5; k++) {
+    const m = k / 5, y = ys(m);
+    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(m * 100).toFixed(0)}%</text>`);
+  }
+  const nx = 6;
+  for (let k = 0; k <= nx; k++) {
+    const nu = d.nuMax * k / nx, x = xs(nu);
+    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${nu.toFixed(0)}</text>`);
+  }
+  g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  g.push(`<text x="${ml + pw / 2}" y="${mt + ph + 32}" text-anchor="middle" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">空间频率 (lp/mm)</text>`);
+  // 衍射极限参考
+  if (d.nuC > 0) {
+    const pts = [];
+    for (let k = 0; k <= 80; k++) { const nu = d.nuMax * k / 80; pts.push(`${xs(nu).toFixed(1)},${ys(diffractionLimit(nu / d.nuC)).toFixed(1)}`); }
+    g.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="#6D7B86" stroke-width="1.2" stroke-dasharray="5 3"/>`);
+  }
+  // 逐视场 T(实线)/S(虚线)
+  d.sets.forEach((s, i) => {
+    const c = mtfHex(FIELDCOLS[i % FIELDCOLS.length]);
+    const pT = s.T.map((m, k) => `${xs(d.nus[k]).toFixed(1)},${ys(m).toFixed(1)}`).join(' ');
+    const pS = s.S.map((m, k) => `${xs(d.nus[k]).toFixed(1)},${ys(m).toFixed(1)}`).join(' ');
+    g.push(`<polyline points="${pS}" fill="none" stroke="${c}" stroke-width="1.2" stroke-dasharray="4 3" opacity=".85"/>`);
+    g.push(`<polyline points="${pT}" fill="none" stroke="${c}" stroke-width="1.8"/>`);
+  });
+  // 图例：视场色 + T/S + 衍射极限
+  const fRef = Math.min(30, d.nuMax);
+  const kRef = Math.round(fRef / d.nuMax * (d.nus.length - 1));
+  let lx = ml, ly = H - 40;
+  for (let i = 0; i < d.sets.length; i++) {
+    const s = d.sets[i], c = mtfHex(FIELDCOLS[i % FIELDCOLS.length]);
+    const label = `${(+s.field).toFixed(2)}${d.mode === 'height' ? 'mm' : '°'}`;
+    const txt = `场 ${label}  T${fRef.toFixed(0)}=${s.T[kRef].toFixed(2)} S${fRef.toFixed(0)}=${s.S[kRef].toFixed(2)}`;
+    g.push(`<line x1="${lx}" y1="${ly}" x2="${lx + 16}" y2="${ly}" stroke="${c}" stroke-width="2"/><text x="${lx + 20}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${txt}</text>`);
+    lx += 20 + txt.length * 6.4 + 14;
+    if (lx > W - mr - 140 && i < d.sets.length - 1) { lx = ml; ly += 16; }
+  }
+  g.push(`<text x="${ml}" y="${H - 8}" fill="#6D7B86" font-size="10" font-family="ui-monospace,monospace">${d.algo === 'diff' ? '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 波前 OPD 以主光线像点为参考球心(离焦未含)' : '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 几何 MTF 近衍射极限时偏高，仅供参考'}</text>`);
+  el.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  el.innerHTML = g.join('');
+}
+
 function svgPoint(e) {
   const pt = layout2dEl.createSVGPoint();
   pt.x = e.clientX; pt.y = e.clientY;
@@ -559,7 +791,20 @@ async function rebuildScene(keepCamera = false) {
     setStatus(`已载入 «${sys.name}» · 面数 ${sys.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
   }
   renderLayout2D();   // 2D 面板常驻于 3D 上方
-  if (spotView && spotView.classList.contains('on')) updateSpot();   // 点列页激活时同步刷新(含 LDM 改动)
+  refreshActivePanel();   // 点列图/相对照度/MTF 页激活时同步刷新(含 LDM 改动、导入、刷新按钮)
+}
+
+// 若当前叠加面板(点列图/相对照度/MTF)处于激活态，重算并重绘。
+// 点列图轻量立即刷新；相对照度/MTF(波前)较重，延后 30ms 并去抖，避免导入/编辑时卡住首屏。
+let _panelTimer = null;
+function refreshActivePanel() {
+  if (spotView && spotView.classList.contains('on')) { populateSpotSelects(); updateSpot(); return; }
+  const run = () => {
+    if (illumView && illumView.classList.contains('on')) { populateIllumSelects(); updateIllum(); }
+    else if (mtfView && mtfView.classList.contains('on')) { populateMtfSelects(); updateMtf(); }
+  };
+  if (_panelTimer) clearTimeout(_panelTimer);
+  _panelTimer = setTimeout(run, 30);
 }
 
 function refreshTable(select) { ldm.render(sys, select); }
@@ -626,20 +871,26 @@ document.getElementById('viewSeg').addEventListener('click', e => {
   if (b) fitCamera(b.dataset.view);
 });
 
-// M2a-2：视场/光线数控件 -> 重新追迹
-const refreshField = () => {
-  rebuildScene(true); renderLayout2D();
-  if (spotView && spotView.classList.contains('on')) populateSpotSelects();   // 下拉随视场/波长更新; 点列由 rebuildScene 刷新
-};
+// M2a-2：视场/光线数控件 -> 重新追迹（rebuildScene 内部会顺带刷新当前激活的叠加面板）
+const refreshField = () => { rebuildScene(true); };
 for (const el of [fmodeEl, fvalsEl, npupilEl, wfnEl]) {
   if (el) { el.addEventListener('input', refreshField); el.addEventListener('change', refreshField); }
 }
-// 点列图按钮 / 标签页：点列图与 2D 光路共享 panel2d（可切换）
-if (spotBtn) spotBtn.addEventListener('click', () => { populateSpotSelects(); setPanelTab('spot'); });
+// 点列图/相对照度/MTF 标签页：与 2D 光路共享 panel2d（可切换）
 if (tabLayout) tabLayout.addEventListener('click', () => setPanelTab('layout'));
 if (tabSpot) tabSpot.addEventListener('click', () => { populateSpotSelects(); setPanelTab('spot'); });
+if (tabIllum) tabIllum.addEventListener('click', () => { populateIllumSelects(); setPanelTab('illum'); });
+if (tabMtf) tabMtf.addEventListener('click', () => { populateMtfSelects(); setPanelTab('mtf'); });
 for (const el of [spotGrid, spotField, spotWavelength, spotAiry]) {
   if (el) el.addEventListener('input', () => updateSpot());
+}
+for (const el of [illumGrid, illumN, illumWavelength]) {
+  if (el) el.addEventListener('input', () => updateIllum());
+  if (el) el.addEventListener('change', () => updateIllum());
+}
+for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength]) {
+  if (el) el.addEventListener('input', () => updateMtf());
+  if (el) el.addEventListener('change', () => updateMtf());
 }
 if (autoVigBtn) autoVigBtn.addEventListener('click', () => {
   const on = Array.isArray(sys.vigCoefs);

@@ -3,17 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="refresh" content="0; url=./lens-3d/">
 <title>镜头调芯 3D 可视化 · Lens-3D</title>
 <style>
-  html,body{height:100%;margin:0;background:#101418;color:#d6dee7;
-    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;}
-  body{display:flex;align-items:center;justify-content:center;}
-  a{color:#4cc2ff;text-decoration:none;}
-  a:hover{text-decoration:underline;}
+  :root {
+    --bg: #101418; --panel: #171e25; --line: #2a3542;
+    --fg: #d6dee7; --dim: #8b99a8; --accent: #4cc2ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; padding: 64px 16px; }
+  .wrap { width: min(620px, 100%); }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .card { display: block; text-decoration: none; color: var(--fg); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
+    transition: border-color .15s, transform .05s; }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .card .t { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .card .t em { color: var(--accent); font-style: normal; }
+  .card .d { font-size: 12px; color: var(--dim); line-height: 1.6; }
+  .card .u { font-size: 11px; color: var(--accent); opacity: .85; margin-top: 8px;
+    font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
 </style>
 </head>
 <body>
-  <p>正在打开 <a href="./lens-3d/">镜头调芯 3D 可视化</a> …（若未跳转，点此链接）</p>
+<div class="wrap">
+  <h1>镜头调芯 3D 可视化 · Lens-3D</h1>
+  <div class="sub">浏览器端光学镜头 3D 可视化 · 纯前端零后端</div>
+  <div class="grid">
+    <a class="card" href="./lens-3d/">
+      <div class="t"><em>3D 工程</em> · lens-3d</div>
+      <div class="d">数据管理器 + 3D/2D 剖面 + 实光线追迹（一阶量 EFL/BFL/F#、渐晕、点列图）。视图可切等轴测 / X-Y / Y-Z / X-Z / 2D。</div>
+      <div class="u">./lens-3d/</div>
+    </a>
+    <a class="card" href="https://anvcor.github.io/lens-bench" target="_blank" rel="noopener">
+      <div class="t"><em>友站</em> · lens-bench（在线）</div>
+      <div class="d">本项目的规格参考与友站：镜头 MTF 仿真台在线版。面表编辑、Layout、MTF、像差图、双镜对比。</div>
+      <div class="u">https://anvcor.github.io/lens-bench ↗</div>
+    </a>
+  </div>
+</div>
 </body>
 </html>

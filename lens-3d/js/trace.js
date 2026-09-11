@@ -1,8 +1,8 @@
 // trace.js — M2a 第一步：子午面（Y-Z）实光线追迹
 // 共轴系统：光线在 Y-Z 平面内传播（x=0），面型为球面/圆锥/偶次非球面。
 // 输出：过光阑口径的「轴上平行光」光线折线与一阶量（EFL/BFL/F#）。
-import { surfaceSag, surfaceSagSlope, radiusToCurv, SURF } from './model.js';
-import { GLASS_DB } from './glassdb.js';
+import { surfaceSag, surfaceSagSlope, radiusToCurv, SURF } from './model.js?v=0.8.4';
+import { GLASS_DB } from './glassdb.js?v=0.8.4';
 
 const LAM_D = 0.58756, LAM_F = 0.48613, LAM_C = 0.65627;
 // 少量常用牌号 [nd, vd]；其余可用 "nd/vd" 写法
@@ -50,11 +50,17 @@ export function indexOf(glass, lambdaUm = LAM_D) {
 }
 
 // 面顶点三元组：取「物面(0)、像面(n-1)」之外的折射面
+// 带 WeakMap 记忆：同一 surfaceList 数组(每次 rebuildScene 新建)只构建一次，
+// 避免逐条光线重建（MTF 上万条光线时这是主要分配来源）。
+const _SURF_CACHE = new WeakMap();
 function opticalSurfaces(sys, surfaceList) {
+  const c = _SURF_CACHE.get(surfaceList);
+  if (c && c.sys === sys) return c.S;
   const S = [];
   for (let i = 1; i < sys.surfaces.length - 1; i++) {
     S.push({ i, z: surfaceList[i].z, shape: sys.surfaces[i].toShape(), glass: sys.surfaces[i].glass });
   }
+  _SURF_CACHE.set(surfaceList, { sys, S });
   return S;
 }
 
@@ -195,27 +201,28 @@ function refract3(D, N, n1, n2) {
   ];
 }
 
-// 3D 全光线追迹：返回逐面命中点 [x,y,z]、像面(x,y)、渐晕/未命中信息。
-export function traceRay3(sys, surfaceList, P0, D0, lam, ignoreAp) {
+// 3D 全光线追迹：返回逐面命中点 [x,y,z]、像面(x,y)、光程 opl 与渐晕/未命中信息。
+export function traceRay3(sys, surfaceList, P0, D0, lam, ignoreAp, noCollect) {
   const S = opticalSurfaces(sys, surfaceList);
   let P = [P0[0], P0[1], P0[2]], D = [D0[0], D0[1], D0[2]];
   const L0 = Math.hypot(D[0], D[1], D[2]) || 1; D = [D[0] / L0, D[1] / L0, D[2] / L0];
   let n = indexOf(sys.surfaces[0]?.glass, lam);
-  const pts = [[P[0], P[1], P[2]]], hits = [];
+  const pts = noCollect ? null : [[P[0], P[1], P[2]]], hits = noCollect ? null : [];
+  let opl = 0;                                              // 光程 Σ n·L（从起点到最后一个折射面）
   for (let i = 0; i < S.length; i++) {
     const si = S[i];
     const hit = intersect3(P, D, si.z, si.shape);
-    if (!hit) return { ok: false, hits, pts, blockedAt: i, why: 'miss', imageX: null, imageY: null };
-    pts.push([hit[0], hit[1], hit[2]]);
-    hits.push({ i: si.i, z: si.z, x: hit[0], y: hit[1] });
+    if (!hit) return { ok: false, hits, pts, opl, lastHit: P, blockedAt: i, why: 'miss', imageX: null, imageY: null };
+    opl += n * Math.hypot(hit[0] - P[0], hit[1] - P[1], hit[2] - P[2]);   // 介质 = 入射侧折射率
+    if (!noCollect) { pts.push([hit[0], hit[1], hit[2]]); hits.push({ i: si.i, z: si.z, x: hit[0], y: hit[1] }); }
     const semi = sys.surfaces[si.i].semi ?? sys.surfaces[si.i].mSemi ?? Infinity;
     const rh = Math.hypot(hit[0], hit[1]);
     if (!ignoreAp && isFinite(semi) && rh > semi * 1.0000001)
-      return { ok: false, hits, pts, blockedAt: i, why: 'vign', imageX: null, imageY: null };
+      return { ok: false, hits, pts, opl, lastHit: hit, blockedAt: i, why: 'vign', imageX: null, imageY: null, vignetted: true };
     const n2 = indexOf(si.glass, lam);
     const Nn = surfaceNormal3(hit[0], hit[1], si.shape);
     const D2 = refract3(D, Nn, n, n2);
-    if (!D2) return { ok: false, hits, pts, blockedAt: i, why: 'tir', imageX: null, imageY: null };
+    if (!D2) return { ok: false, hits, pts, opl, lastHit: hit, blockedAt: i, why: 'tir', imageX: null, imageY: null };
     const L = Math.hypot(D2[0], D2[1], D2[2]); D = [D2[0] / L, D2[1] / L, D2[2] / L];
     P = hit; n = n2;
   }
@@ -223,9 +230,9 @@ export function traceRay3(sys, surfaceList, P0, D0, lam, ignoreAp) {
   if (Math.abs(D[2]) > 1e-9) {
     const t = (0 - P[2]) / D[2];
     imageX = P[0] + t * D[0]; imageY = P[1] + t * D[1];
-    pts.push([imageX, imageY, 0]);                 // 投到像面 z=0
+    if (!noCollect) pts.push([imageX, imageY, 0]);  // 投到像面 z=0
   }
-  return { ok: true, hits, pts, blockedAt: -1, why: 'ok', imageX, imageY, vignetted: false };
+  return { ok: true, hits, pts, opl, lastHit: P, blockedAt: -1, why: 'ok', imageX, imageY, vignetted: false };
 }
 
 // 一阶量（近轴旁轴追迹，物在无穷远）：EFL/BFL/F#。用单位高度 h=1 的旁轴边缘光线。
@@ -431,8 +438,11 @@ export function traceFieldBundle(sys, surfaceList, o) {
   const vc = o.vigCoef || null;
   const inWin = (px, py) => !vc || ((px >= vc.xLo && px <= vc.xHi) && (py >= vc.yLo && py <= vc.yHi));
   const rays = [];
+  let nSample = 0, nVig = 0, nTrace = 0;   // 总采样 / 被截断 / 实际追迹(未被瞳窗口提前剔除)
   const addAt = (px, py) => {
-    if (!inWin(px, py)) return;
+    nSample++;
+    if (!inWin(px, py)) { nVig++; return; }   // 自动渐晕窗口外：不追迹，计入被截断
+    nTrace++;
     let P0, D0;
     if (finite) {
       P0 = [0, param, zObj];
@@ -443,7 +453,10 @@ export function traceFieldBundle(sys, surfaceList, o) {
       P0 = [px * epd / 2, param + py * epd / 2, zStart]; D0 = [0, Math.sin(ang), Math.cos(ang)];
     }
     const tr = traceRay3(sys, surfaceList, P0, D0, lam, false);
-    if (vc && tr.vignetted) return;                          // 自动渐晕：被渐晕光线不显示
+    if (tr.vignetted) {
+      nVig++;
+      if (vc) return;                                        // 自动渐晕：被渐晕光线不显示
+    }
     rays.push({ px, py, pts: tr.pts, ok: tr.ok, imageX: tr.imageX, imageY: tr.imageY, blockedAt: tr.blockedAt, vignetted: !!tr.vignetted, autoVig: !!vc });
   };
   for (let k = 0; k < N; k++) { const py = (N === 1) ? 0 : (-1 + 2 * k / (N - 1)); if (py === 0) continue; addAt(0, py); }
@@ -451,7 +464,7 @@ export function traceFieldBundle(sys, surfaceList, o) {
 
   const toOut = (tr) => tr ? { pts: tr.pts, ok: tr.ok, imageX: tr.imageX, imageY: tr.imageY, blockedAt: tr.blockedAt, vignetted: !!tr.vignetted } : null;
   return {
-    mode, field: fv, stopSemi, stopZ, epd, finite,
+    mode, field: fv, stopSemi, stopZ, epd, finite, nSample, nVig, nTrace,
     chief: chief ? { ...toOut(chief), _theta: chief._theta, _a: chief._a, _h: chief._h, _finite: chief._finite, _zStart: chief._zStart, _zEP: chief._zEP, _zObj: chief._zObj } : null,
     rays, vigCoef: vc,
   };
@@ -569,11 +582,15 @@ export function traceFields(sys, surfaceList, cfg = {}) {
       return {
         nm: w.nm, weight: w.weight ?? 1, color: w.color || '#ffb300', primary: li === pri,
         chief: b.chief, rays: b.rays, stopSemi: b.stopSemi, stopZ: b.stopZ, epd: b.epd,
+        nSample: b.nSample || 0, nVig: b.nVig || 0, nTrace: b.nTrace || 0,
         mode: cfg.mode, field: +fv,
       };
     });
     const m = lams[pri];
-    fields.push({ mode: cfg.mode, field: +fv, lams, chief: m.chief, rays: m.rays, epd: m.epd });
+    fields.push({
+      mode: cfg.mode, field: +fv, lams, chief: m.chief, rays: m.rays, epd: m.epd,
+      nSample: m.nSample || 0, nVig: m.nVig || 0, nTrace: m.nTrace || 0,
+    });
   });
   return { fields, EP, primaryNm: wls[pri].nm ?? 587.6, wavelengths: wls.map(w => ({ nm: w.nm, weight: w.weight, color: w.color })) };
 }
@@ -613,3 +630,141 @@ export function traceSpot(sys, surfaceList, cfg = {}) {
   }
   return { field: fv, mode, points, epd, n: N };
 }
+
+// ---- 相对照度（一维）------------------------------------------------------
+// 逐视场在【入瞳圆内】均匀网格实光线追迹：
+//   通过率 V    = 到达像面的样本数 / 圆内样本数(即有效通光面积比, 含渐晕/口径)；
+//   自然渐晕     cos⁴θ, θ = 物方半视场角；
+//   RI(v) = V·cos⁴θ, 再归一化到轴上 RI(0)=1。
+// 物方半角 θ 取名义值：角度模式=场值；像高模式=atan(h/EFL)，避免 height 主光线解的多解退化；
+// 有限共轭用主光线真实物角(主光线解在有限共轭下无退化)。
+// 取单个波长(cfg.lambdaUm, 默认主波长)。返回逐视场 V/cos⁴/RI 与轴上参考值。
+export function traceIllumination(sys, surfaceList, cfg = {}) {
+  const lam = cfg.lambdaUm ?? LAM_D;
+  const mode = cfg.mode === 'height' ? 'height' : 'angle';
+  const list = (cfg.fields && cfg.fields.length) ? cfg.fields : [0];
+  const N = Math.max(5, Math.min(41, cfg.nGrid ?? 15)) | 0;
+  const S = opticalSurfaces(sys, surfaceList);
+  const items = [];
+  if (!S.length) return { mode, fields: list, items, ref: 1 };
+  const finiteSys = isFinite(sys.objectDist) && sys.objectDist > 0 && sys.objectDist < 1e7;
+  const efl = Math.abs((firstOrder(sys, surfaceList, lam) || {}).efl) || 1;
+  for (const fv of list) {
+    // 名义物方半视场角(°): 角度=场值; 像高=atan(|h|/EFL)
+    let thetaDeg = (mode === 'angle') ? +fv : Math.atan2(Math.abs(+fv), efl) * 180 / Math.PI;
+    const b = traceFieldBundle(sys, surfaceList, {
+      mode: finiteSys ? mode : 'angle',           // 无穷远一律走 angle 光束(避免 height 退化)
+      field: finiteSys ? +fv : thetaDeg,
+      nPupil: 1, lambdaUm: lam,
+    });
+    const c = b.chief;
+    if (!c) { items.push({ field: +fv, ok: false }); continue; }
+    if (finiteSys && c._theta != null) thetaDeg = c._theta;   // 有限共轭：真实物角
+    const finite = c._finite;
+    const param = (c._a != null ? c._a : c._h) || 0;
+    const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
+    let nTot = 0, nPass = 0;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+      const px = -1 + 2 * i / (N - 1), py = -1 + 2 * j / (N - 1);
+      if (px * px + py * py > 1.0000001) continue;              // 圆瞳内(面积均匀)
+      nTot++;
+      let P0, D0;
+      if (finite) {
+        const dx = px * epd / 2, dy = py * epd / 2 - param, dz = zEP - zObj;
+        const L = Math.hypot(dx, dy, dz) || 1; P0 = [0, param, zObj]; D0 = [dx / L, dy / L, dz / L];
+      } else {
+        const ang = thetaDeg * Math.PI / 180;
+        P0 = [px * epd / 2, param + py * epd / 2, zStart]; D0 = [0, Math.sin(ang), Math.cos(ang)];
+      }
+      const tr = traceRay3(sys, surfaceList, P0, D0, lam, false);
+      if (tr.ok && tr.imageX != null && tr.imageY != null) nPass++;
+    }
+    const V = nTot ? nPass / nTot : 0;
+    const cos4 = Math.pow(Math.cos(thetaDeg * Math.PI / 180), 4);
+    items.push({ field: +fv, ok: true, V, cos4, nTot, nPass, theta: thetaDeg, raw: V * cos4 });
+  }
+  let ref = 1;
+  const onAx = items.find(o => o.ok && Math.abs(o.field) < 1e-9);
+  if (onAx && onAx.raw > 0) ref = onAx.raw;
+  for (const o of items) if (o.ok) o.RI = o.raw / ref;
+  return { mode, fields: list, items, ref };
+}
+
+// 3×3 线性方程求解(M·x=Y)，奇异返回 null（用于波前的活塞+倾斜最小二乘）
+function solve3(M, Y) {
+  const A = [[M[0][0], M[0][1], M[0][2], Y[0]], [M[1][0], M[1][1], M[1][2], Y[1]], [M[2][0], M[2][1], M[2][2], Y[2]]];
+  for (let c = 0; c < 3; c++) {
+    let p = c; for (let r = c + 1; r < 3; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (Math.abs(A[p][c]) < 1e-18) return null;
+    const t = A[c]; A[c] = A[p]; A[p] = t;
+    for (let r = 0; r < 3; r++) { if (r === c) continue; const f = A[r][c] / A[c][c]; for (let k = c; k < 4; k++) A[r][k] -= f * A[c][k]; }
+  }
+  return [A[0][3] / A[0][0], A[1][3] / A[1][1], A[2][3] / A[2][2]];
+}
+
+// ---- 波前(FFT 衍射 MTF)用：在 N×N 瞳网格上采样 OPD(波) ----
+// 逐格点追迹：OPD = OPL(到最后一个折射面) + |像点中心 − 最后折射点|；
+// 再【最小二乘扣除活塞+倾斜】(a+b·u+c·v)——倾斜只平移 PSF、不影响 MTF，
+// 但轴外的巨大倾斜会让 FFT 相位混叠(出现锯齿)。未到达/被挡的格点振幅=0。
+// 返回复瞳函数，供 mtf.js 的 otfFromPupil 用。
+export function traceWavefront(sys, surfaceList, cfg = {}) {
+  const lam = cfg.lambdaUm ?? LAM_D;                  // μm
+  const mode = cfg.mode === 'height' ? 'height' : 'angle';
+  const fv = cfg.field ?? 0;
+  let N = Math.max(32, Math.min(256, cfg.nGrid ?? 128)) | 0;
+  if ((N & (N - 1)) !== 0) N = 1 << Math.ceil(Math.log2(N));   // 向上归到 2 的幂
+  // FFT 自相关不绕回的前提：孔径半径 R < N/4（否则 OTF 会被周期绕回污染）
+  const R = Math.max(8, Math.floor(N / 4) - 1);
+  const S = opticalSurfaces(sys, surfaceList);
+  if (!S.length) return { ok: false };
+  const b = traceFieldBundle(sys, surfaceList, { mode, field: fv, nPupil: 1, lambdaUm: lam });
+  const c = b.chief;
+  if (!c) return { ok: false };
+  const finite = c._finite;
+  const param = (c._a != null ? c._a : c._h) || 0;
+  const theta = c._theta ?? 0;
+  const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
+  const cx = (cfg.refX != null) ? cfg.refX : (c.imageX || 0);   // OPD 参考球心(复色时须用公共点)
+  const cy = (cfg.refY != null) ? cfg.refY : (c.imageY || 0);
+  const re = new Float64Array(N * N), im = new Float64Array(N * N);
+  const o = N >> 1;
+  const cap = N * N;
+  const si = new Int32Array(cap), sj = new Int32Array(cap);       // 采样点，扁平数组避免逐条分配
+  const su = new Float64Array(cap), sv = new Float64Array(cap), so = new Float64Array(cap);
+  let nHit = 0;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const u = (i - o) / R, v = (j - o) / R;
+    if (u * u + v * v > 1.0000001) continue;          // 圆瞳内
+    let P0, D0;
+    if (finite) {
+      const dx = u * epd / 2, dy = v * epd / 2 - param, dz = zEP - zObj;
+      const L = Math.hypot(dx, dy, dz) || 1; P0 = [0, param, zObj]; D0 = [dx / L, dy / L, dz / L];
+    } else {
+      const ang = theta * Math.PI / 180;
+      P0 = [u * epd / 2, param + v * epd / 2, zStart]; D0 = [0, Math.sin(ang), Math.cos(ang)];
+    }
+    const tr = traceRay3(sys, surfaceList, P0, D0, lam, false, true);   // noCollect：免逐条建点数组
+    if (!tr.ok) continue;                             // 振幅 0（被挡/未命中/全反射）
+    const lh = tr.lastHit;
+    const dx = cx - lh[0], dy = cy - lh[1], dz = -lh[2];
+    si[nHit] = i; sj[nHit] = j; su[nHit] = u; sv[nHit] = v;
+    so[nHit] = (tr.opl || 0) + Math.hypot(dx, dy, dz); nHit++;
+  }
+  let coef = [0, 0, 0];
+  if (nHit >= 3) {
+    let S00 = 0, S01 = 0, S02 = 0, S11 = 0, S12 = 0, S22 = 0, T0 = 0, T1 = 0, T2 = 0;
+    for (let k = 0; k < nHit; k++) { const u = su[k], v = sv[k], y = so[k]; S00 += 1; S01 += u; S02 += v; S11 += u * u; S12 += u * v; S22 += v * v; T0 += y; T1 += u * y; T2 += v * y; }
+    const M = [[S00, S01, S02], [S01, S11, S12], [S02, S12, S22]], Y = [T0, T1, T2];
+    const cc = solve3(M, Y); if (cc) coef = cc; else coef = [so[0], 0, 0];
+  } else if (nHit) coef = [so[0], 0, 0];
+  const lamMm = lam / 1000;
+  for (let k = 0; k < nHit; k++) {
+    const w = so[k] - (coef[0] + coef[1] * su[k] + coef[2] * sv[k]);
+    const ph = 2 * Math.PI * w / lamMm;               // OPD(mm)/λ(mm)
+    re[sj[k] * N + si[k]] = Math.cos(ph); im[sj[k] * N + si[k]] = Math.sin(ph);
+  }
+  const fno = (isFinite(sys.fno) && sys.fno > 0) ? sys.fno : ((firstOrder(sys, surfaceList, lam) || {}).fno || 0);
+  const nuC = fno > 0 ? 1 / ((lam / 1000) * fno) : 0;   // 衍射截止 lp/mm
+  return { ok: nHit > 0, N, R, re, im, nuC, nHit, cx, cy, fno };
+}
+
