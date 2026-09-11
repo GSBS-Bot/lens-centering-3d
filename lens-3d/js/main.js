@@ -896,6 +896,15 @@ makeResize(vGrip, ev => {      // 调 2D/点列 面板高度(3D 随之)
   resize();
 });
 
+// 2D/图表浮层：显示/隐藏（叠加在 3D 视图内）
+const panelToggle = document.getElementById('panelToggle');
+if (panelToggle) panelToggle.addEventListener('click', () => {
+  const hidden = panel2dEl.classList.toggle('hidden');
+  panelToggle.classList.toggle('active', !hidden);
+  if (!hidden) { try { renderLayout2D(); refreshActivePanel(); } catch (e) {} }
+  resize();
+});
+
 const ldm = new LDM(document.getElementById('ldm'), {
   onChange: () => { sys = ldm.sys; ldm.render(sys, ldm.selected); rebuildScene(true); highlightByIndex(ldm.selected); },   // 撤销/结构操作：表格+图表都重渲染
   onSelect: (i) => highlightByIndex(i),

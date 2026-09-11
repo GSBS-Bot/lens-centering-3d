@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>镜头数据编辑器</title>
-  <link rel="stylesheet" href="css/style.css?v=1.0.2">
+  <link rel="stylesheet" href="css/style.css?v=1.0.3">
 </head>
 <body>
   <div id="app">
@@ -74,48 +74,6 @@
     <div id="sideGrip" class="grip-v" title="拖动调整左侧(LDM)窗口宽度"></div>
 
     <main id="stage">
-      <section id="panel2d">
-        <div class="panel-head">
-          <div class="tabs">
-            <button id="tabLayout" class="tab active" type="button">2D 光路</button>
-            <button id="tabSpot" class="tab" type="button">点列图</button>
-            <button id="tabIllum" class="tab" type="button">相对照度</button>
-            <button id="tabMtf" class="tab" type="button">MTF</button>
-          </div>
-          <span id="layoutBadge" class="layoutBadge"></span>
-        </div>
-        <div class="panel2d-body">
-          <svg id="layout2d"></svg>
-          <div id="spotView" class="spotView">
-            <div class="spot-ctrl">
-              <label title="入瞳内采样网格密度">网格 <input id="spotGrid" type="number" value="15" min="5" max="41" step="2"></label>
-              <label title="显示哪些视场">场 <select id="spotField"><option value="all">全部</option></select></label>
-              <label title="用哪个波长">波长 <select id="spotWavelength"><option value="primary">主波长</option></select></label>
-              <label title="绘制艾里斑(衍射极限)参考圆"><input id="spotAiry" type="checkbox" checked> 艾里斑</label>
-            </div>
-            <svg id="spotMain"></svg>
-          </div>
-          <div id="illumView" class="spotView">
-            <div class="spot-ctrl">
-              <label title="入瞳内采样网格密度(圆内)">网格 <input id="illumGrid" type="number" value="15" min="5" max="41" step="2"></label>
-              <label title="沿视场均匀取的点数">视场点 <input id="illumN" type="number" value="13" min="3" max="41" step="2"></label>
-              <label title="用哪个波长(相对照度通常看主波长)">波长 <select id="illumWavelength"><option value="primary">主波长</option></select></label>
-            </div>
-            <svg id="illumMain"></svg>
-          </div>
-          <div id="mtfView" class="spotView">
-            <div class="spot-ctrl">
-              <label title="MTF 算法">算法 <select id="mtfAlgo"><option value="geo">几何</option><option value="diff">波前(衍射)</option></select></label>
-              <label title="显示哪些视场">场 <select id="mtfField"><option value="all">全部</option></select></label>
-              <label title="入瞳采样网格密度">网格 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
-              <label title="横轴最高空间频率">最高频率 <input id="mtfNu" type="number" value="100" min="10" max="1000" step="10"> lp/mm</label>
-              <label title="用哪个/哪些波长（全部=复色）">波长 <select id="mtfWavelength"><option value="all">全部</option><option value="primary">主波长</option></select></label>
-            </div>
-            <svg id="mtfMain"></svg>
-          </div>
-        </div>
-      </section>
-      <div id="vGrip" class="grip-h" title="拖动调整 2D/点列图 与 3D 高度"></div>
       <section id="stage3d">
         <canvas id="view"></canvas>
         <div id="hud" class="hud">
@@ -133,13 +91,56 @@
           </div>
           <span class="sep"></span>
           <button id="resetView" type="button">重置视角(Y-Z)</button>
+          <button id="panelToggle" class="btn-link active" type="button" title="显示/隐藏 2D 光路与图表浮层">2D/图表</button>
           <a id="backLauncher" class="btn-link" href="../">返回启动台</a>
           <span class="sep"></span>
           <span class="hint">左键旋转 · 右键/滚轮缩放 · 中键平移</span>
         </div>
+
+        <section id="panel2d">
+          <div class="panel-head">
+            <div class="tabs">
+              <button id="tabLayout" class="tab active" type="button">2D 光路</button>
+              <button id="tabSpot" class="tab" type="button">点列图</button>
+              <button id="tabIllum" class="tab" type="button">相对照度</button>
+              <button id="tabMtf" class="tab" type="button">MTF</button>
+            </div>
+            <span id="layoutBadge" class="layoutBadge"></span>
+          </div>
+          <div class="panel2d-body">
+            <svg id="layout2d"></svg>
+            <div id="spotView" class="spotView">
+              <div class="spot-ctrl">
+                <label title="入瞳内采样网格密度">网格 <input id="spotGrid" type="number" value="15" min="5" max="41" step="2"></label>
+                <label title="显示哪些视场">场 <select id="spotField"><option value="all">全部</option></select></label>
+                <label title="用哪个波长">波长 <select id="spotWavelength"><option value="primary">主波长</option></select></label>
+                <label title="绘制艾里斑(衍射极限)参考圆"><input id="spotAiry" type="checkbox" checked> 艾里斑</label>
+              </div>
+              <svg id="spotMain"></svg>
+            </div>
+            <div id="illumView" class="spotView">
+              <div class="spot-ctrl">
+                <label title="入瞳内采样网格密度(圆内)">网格 <input id="illumGrid" type="number" value="15" min="5" max="41" step="2"></label>
+                <label title="沿视场均匀取的点数">视场点 <input id="illumN" type="number" value="13" min="3" max="41" step="2"></label>
+                <label title="用哪个波长(相对照度通常看主波长)">波长 <select id="illumWavelength"><option value="primary">主波长</option></select></label>
+              </div>
+              <svg id="illumMain"></svg>
+            </div>
+            <div id="mtfView" class="spotView">
+              <div class="spot-ctrl">
+                <label title="MTF 算法">算法 <select id="mtfAlgo"><option value="geo">几何</option><option value="diff">波前(衍射)</option></select></label>
+                <label title="显示哪些视场">场 <select id="mtfField"><option value="all">全部</option></select></label>
+                <label title="入瞳采样网格密度">网格 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
+                <label title="横轴最高空间频率">最高频率 <input id="mtfNu" type="number" value="100" min="10" max="1000" step="10"> lp/mm</label>
+                <label title="用哪个/哪些波长（全部=复色）">波长 <select id="mtfWavelength"><option value="all">全部</option><option value="primary">主波长</option></select></label>
+              </div>
+              <svg id="mtfMain"></svg>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.0.2"></script>
+  <script type="module" src="js/main.js?v=1.0.3"></script>
 </body>
 </html>
