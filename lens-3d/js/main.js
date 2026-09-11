@@ -179,7 +179,19 @@ function sceneBox() {
   return box;
 }
 
+function showLayout2D(on) {
+  const cv = document.getElementById('view');
+  if (cv) cv.style.display = on ? 'none' : 'block';
+  if (layout2dEl) layout2dEl.classList.toggle('show', on);
+}
 function fitCamera(mode) {
+  if (mode === '2d') {                 // 2D 光路作为 3D 视图区的一种视图
+    setActiveView('2d');
+    showLayout2D(true);
+    renderLayout2D();
+    return;
+  }
+  showLayout2D(false);
   const box = sceneBox();
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -423,20 +435,16 @@ function airyRadius(fno, lambdaUm) {
 }
 
 function setPanelTab(which) {
-  const isLayout = which === 'layout';
   const isSpot = which === 'spot';
   const isIllum = which === 'illum';
   const isMtf = which === 'mtf';
-  layout2dEl.classList.toggle('hidden', !isLayout);
   if (spotView) spotView.classList.toggle('on', isSpot);
   if (illumView) illumView.classList.toggle('on', isIllum);
   if (mtfView) mtfView.classList.toggle('on', isMtf);
-  if (tabLayout) tabLayout.classList.toggle('active', isLayout);
   if (tabSpot) tabSpot.classList.toggle('active', isSpot);
   if (tabIllum) tabIllum.classList.toggle('active', isIllum);
   if (tabMtf) tabMtf.classList.toggle('active', isMtf);
-  if (isLayout) renderLayout2D();
-  else if (isSpot) updateSpot();
+  if (isSpot) updateSpot();
   else if (isIllum) updateIllum();
   else if (isMtf) updateMtf();
 }
@@ -896,15 +904,6 @@ makeResize(vGrip, ev => {      // 调 2D/点列 面板高度(3D 随之)
   resize();
 });
 
-// 2D/图表浮层：显示/隐藏（叠加在 3D 视图内）
-const panelToggle = document.getElementById('panelToggle');
-if (panelToggle) panelToggle.addEventListener('click', () => {
-  const hidden = panel2dEl.classList.toggle('hidden');
-  panelToggle.classList.toggle('active', !hidden);
-  if (!hidden) { try { renderLayout2D(); refreshActivePanel(); } catch (e) {} }
-  resize();
-});
-
 const ldm = new LDM(document.getElementById('ldm'), {
   onChange: () => { sys = ldm.sys; ldm.render(sys, ldm.selected); rebuildScene(true); highlightByIndex(ldm.selected); },   // 撤销/结构操作：表格+图表都重渲染
   onSelect: (i) => highlightByIndex(i),
@@ -1004,13 +1003,13 @@ window.addEventListener('keydown', e => {
 });
 
 function resize() {
-  // 3D 画布只占下方 #stage3d 区域
+  // 3D 画布只占 #stage3d 区域
   const r = document.getElementById('stage3d').getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-  renderLayout2D();   // 2D 面板常驻，按新尺寸重新取景
+  if (viewMode === '2d') renderLayout2D();   // 2D 视图激活时按新尺寸重新取景
 }
 window.addEventListener('resize', resize);
 
