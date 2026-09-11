@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -6,80 +6,77 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>镜头数据编辑器</title>
-  <link rel="stylesheet" href="css/style.css?v=1.0.1">
+  <title>闀滃ご鏁版嵁缂栬緫鍣?/title>
+  <link rel="stylesheet" href="css/style.css?v=1.0.2">
 </head>
 <body>
   <div id="app">
     <aside id="side">
       <div class="side-head">
         <div>
-          <div class="side-title">镜头数据编辑器</div>
-          <div class="side-sub">M1+ · LDM 表格直接编辑 · 2D/3D 实时同步</div>
+          <div class="side-title">闀滃ご鏁版嵁缂栬緫鍣?/div>
+          <div class="side-sub">M1+ 路 LDM 琛ㄦ牸鐩存帴缂栬緫 路 2D/3D 瀹炴椂鍚屾</div>
         </div>
-        <div class="theme-switch" id="themeSwitch" title="切换主题">
-          <button class="theme-dot" data-theme="blue" title="深空蓝" style="background:#4cc2ff"></button>
-          <button class="theme-dot" data-theme="graphite" title="石墨黑" style="background:#cfd8e3"></button>
-          <button class="theme-dot" data-theme="violet" title="极夜紫" style="background:#b388ff"></button>
-          <button class="theme-dot" data-theme="forest" title="松林绿" style="background:#5fd0a0"></button>
-          <button class="theme-dot" data-theme="light" title="日间浅色" style="background:#ffffff"></button>
+        <div class="theme-switch" id="themeSwitch" title="鍒囨崲涓婚">
+          <button class="theme-dot" data-theme="blue" title="娣辩┖钃? style="background:#4cc2ff"></button>
+          <button class="theme-dot" data-theme="graphite" title="鐭冲ⅷ榛? style="background:#cfd8e3"></button>
+          <button class="theme-dot" data-theme="violet" title="鏋佸绱? style="background:#b388ff"></button>
+          <button class="theme-dot" data-theme="forest" title="鏉炬灄缁? style="background:#5fd0a0"></button>
+          <button class="theme-dot" data-theme="light" title="鏃ラ棿娴呰壊" style="background:#ffffff"></button>
         </div>
       </div>
 
       <div class="topbar">
         <select id="demoSelect">
-          <option value="single">单片双凸物镜 (F=50mm)</option>
-          <option value="planoconvex">平凸物镜 (F=80mm)</option>
-          <option value="blank">空白系统 (手动搭)</option>
+          <option value="single">鍗曠墖鍙屽嚫鐗╅暅 (F=50mm)</option>
+          <option value="planoconvex">骞冲嚫鐗╅暅 (F=80mm)</option>
+          <option value="blank">绌虹櫧绯荤粺 (鎵嬪姩鎼?</option>
         </select>
-        <button id="importFile" class="btn">导入 .zmx/.seq</button>
+        <button id="importFile" class="btn">瀵煎叆 .zmx/.seq</button>
         <input id="fileInput" type="file" accept=".zmx,.seq" hidden>
-        <button id="newDemo" class="btn ghost">重置</button>
+        <button id="newDemo" class="btn ghost">閲嶇疆</button>
       </div>
 
       <div class="fieldbar">
-        <label title="Zemax 视场=半视场角(半FOV)。全视场=2×半视场角。如半视场20°=全视场40°。">视场模式
+        <label title="Zemax 瑙嗗満=鍗婅鍦鸿(鍗奆OV)銆傚叏瑙嗗満=2脳鍗婅鍦鸿銆傚鍗婅鍦?0掳=鍏ㄨ鍦?0掳銆?>瑙嗗満妯″紡
           <select id="fmode">
-            <option value="angle" selected>半视场角 °</option>
-            <option value="height">像高 mm</option>
+            <option value="angle" selected>鍗婅鍦鸿 掳</option>
+            <option value="height">鍍忛珮 mm</option>
           </select>
         </label>
-        <label title="逗号分隔多视场（半视场角° 或 像高mm，按读取的文件值）">值
-          <input id="fvals" type="text" value="0" spellcheck="false">
+        <label title="閫楀彿鍒嗛殧澶氳鍦猴紙鍗婅鍦鸿掳 鎴?鍍忛珮mm锛屾寜璇诲彇鐨勬枃浠跺€硷級">鍊?          <input id="fvals" type="text" value="0" spellcheck="false">
         </label>
-        <label title="每个视场的光线数(入瞳内,上取奇数)">光线数
-          <input id="npupil" type="number" value="9" min="1" max="33" step="2">
+        <label title="姣忎釜瑙嗗満鐨勫厜绾挎暟(鍏ョ灣鍐?涓婂彇濂囨暟)">鍏夌嚎鏁?          <input id="npupil" type="number" value="9" min="1" max="33" step="2">
         </label>
-        <label title="像方工作F/#：入瞳直径=|EFL|/F#">工作F数
-          <input id="wfn" type="number" value="8" placeholder="空=由光阑定" min="0.5" step="0.1">
+        <label title="鍍忔柟宸ヤ綔F/#锛氬叆鐬崇洿寰?|EFL|/F#">宸ヤ綔F鏁?          <input id="wfn" type="number" value="8" placeholder="绌?鐢卞厜闃戝畾" min="0.5" step="0.1">
         </label>
-        <button id="autoVig" type="button" title="按净口径/半孔径自动计算逐视场渐晕(被渐晕光线不显示)">自动渐晕</button>
-        <button id="refreshBtn" type="button" title="一键刷新：表格/2D/3D/当前图表(点列图/相对照度/MTF) 全部重渲染">刷新</button>
-        <span id="fieldVig" class="vig">未追迹</span>
+        <button id="autoVig" type="button" title="鎸夊噣鍙ｅ緞/鍗婂瓟寰勮嚜鍔ㄨ绠楅€愯鍦烘笎鏅?琚笎鏅曞厜绾夸笉鏄剧ず)">鑷姩娓愭檿</button>
+        <button id="refreshBtn" type="button" title="涓€閿埛鏂帮細琛ㄦ牸/2D/3D/褰撳墠鍥捐〃(鐐瑰垪鍥?鐩稿鐓у害/MTF) 鍏ㄩ儴閲嶆覆鏌?>鍒锋柊</button>
+        <span id="fieldVig" class="vig">鏈拷杩?/span>
       </div>
 
       <div class="wlbar">
         <div class="wl-head">
-          <span>波长 / 权重</span>
-          <button id="wlAdd" type="button">＋ 添加</button>
-          <button id="wlPreset" type="button" title="F/d/C 三色(色散)">F/d/C</button>
-          <button id="wlOnly" type="button" title="只保留主波长">仅主</button>
+          <span>娉㈤暱 / 鏉冮噸</span>
+          <button id="wlAdd" type="button">锛?娣诲姞</button>
+          <button id="wlPreset" type="button" title="F/d/C 涓夎壊(鑹叉暎)">F/d/C</button>
+          <button id="wlOnly" type="button" title="鍙繚鐣欎富娉㈤暱">浠呬富</button>
         </div>
         <div id="wltable" class="wl-table"></div>
-        <div class="wl-note">●主波长用于 EFL/F#·像高；权重用于后续 MTF/点列平均；按波长分色展示</div>
+        <div class="wl-note">鈼忎富娉㈤暱鐢ㄤ簬 EFL/F#路鍍忛珮锛涙潈閲嶇敤浜庡悗缁?MTF/鐐瑰垪骞冲潎锛涙寜娉㈤暱鍒嗚壊灞曠ず</div>
       </div>
 
       <div id="ldm" class="ldm-root"></div>
     </aside>
-    <div id="sideGrip" class="grip-v" title="拖动调整左侧(LDM)窗口宽度"></div>
+    <div id="sideGrip" class="grip-v" title="鎷栧姩璋冩暣宸︿晶(LDM)绐楀彛瀹藉害"></div>
 
     <main id="stage">
       <section id="panel2d">
         <div class="panel-head">
           <div class="tabs">
-            <button id="tabLayout" class="tab active" type="button">2D 光路</button>
-            <button id="tabSpot" class="tab" type="button">点列图</button>
-            <button id="tabIllum" class="tab" type="button">相对照度</button>
+            <button id="tabLayout" class="tab active" type="button">2D 鍏夎矾</button>
+            <button id="tabSpot" class="tab" type="button">鐐瑰垪鍥?/button>
+            <button id="tabIllum" class="tab" type="button">鐩稿鐓у害</button>
             <button id="tabMtf" class="tab" type="button">MTF</button>
           </div>
           <span id="layoutBadge" class="layoutBadge"></span>
@@ -88,58 +85,58 @@
           <svg id="layout2d"></svg>
           <div id="spotView" class="spotView">
             <div class="spot-ctrl">
-              <label title="入瞳内采样网格密度">网格 <input id="spotGrid" type="number" value="15" min="5" max="41" step="2"></label>
-              <label title="显示哪些视场">场 <select id="spotField"><option value="all">全部</option></select></label>
-              <label title="用哪个波长">波长 <select id="spotWavelength"><option value="primary">主波长</option></select></label>
-              <label title="绘制艾里斑(衍射极限)参考圆"><input id="spotAiry" type="checkbox" checked> 艾里斑</label>
+              <label title="鍏ョ灣鍐呴噰鏍风綉鏍煎瘑搴?>缃戞牸 <input id="spotGrid" type="number" value="15" min="5" max="41" step="2"></label>
+              <label title="鏄剧ず鍝簺瑙嗗満">鍦?<select id="spotField"><option value="all">鍏ㄩ儴</option></select></label>
+              <label title="鐢ㄥ摢涓尝闀?>娉㈤暱 <select id="spotWavelength"><option value="primary">涓绘尝闀?/option></select></label>
+              <label title="缁樺埗鑹鹃噷鏂?琛嶅皠鏋侀檺)鍙傝€冨渾"><input id="spotAiry" type="checkbox" checked> 鑹鹃噷鏂?/label>
             </div>
             <svg id="spotMain"></svg>
           </div>
           <div id="illumView" class="spotView">
             <div class="spot-ctrl">
-              <label title="入瞳内采样网格密度(圆内)">网格 <input id="illumGrid" type="number" value="15" min="5" max="41" step="2"></label>
-              <label title="沿视场均匀取的点数">视场点 <input id="illumN" type="number" value="13" min="3" max="41" step="2"></label>
-              <label title="用哪个波长(相对照度通常看主波长)">波长 <select id="illumWavelength"><option value="primary">主波长</option></select></label>
+              <label title="鍏ョ灣鍐呴噰鏍风綉鏍煎瘑搴?鍦嗗唴)">缃戞牸 <input id="illumGrid" type="number" value="15" min="5" max="41" step="2"></label>
+              <label title="娌胯鍦哄潎鍖€鍙栫殑鐐规暟">瑙嗗満鐐?<input id="illumN" type="number" value="13" min="3" max="41" step="2"></label>
+              <label title="鐢ㄥ摢涓尝闀?鐩稿鐓у害閫氬父鐪嬩富娉㈤暱)">娉㈤暱 <select id="illumWavelength"><option value="primary">涓绘尝闀?/option></select></label>
             </div>
             <svg id="illumMain"></svg>
           </div>
           <div id="mtfView" class="spotView">
             <div class="spot-ctrl">
-              <label title="MTF 算法">算法 <select id="mtfAlgo"><option value="geo">几何</option><option value="diff">波前(衍射)</option></select></label>
-              <label title="显示哪些视场">场 <select id="mtfField"><option value="all">全部</option></select></label>
-              <label title="入瞳采样网格密度">网格 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
-              <label title="横轴最高空间频率">最高频率 <input id="mtfNu" type="number" value="100" min="10" max="1000" step="10"> lp/mm</label>
-              <label title="用哪个/哪些波长（全部=复色）">波长 <select id="mtfWavelength"><option value="all">全部</option><option value="primary">主波长</option></select></label>
+              <label title="MTF 绠楁硶">绠楁硶 <select id="mtfAlgo"><option value="geo">鍑犱綍</option><option value="diff">娉㈠墠(琛嶅皠)</option></select></label>
+              <label title="鏄剧ず鍝簺瑙嗗満">鍦?<select id="mtfField"><option value="all">鍏ㄩ儴</option></select></label>
+              <label title="鍏ョ灣閲囨牱缃戞牸瀵嗗害">缃戞牸 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
+              <label title="妯酱鏈€楂樼┖闂撮鐜?>鏈€楂橀鐜?<input id="mtfNu" type="number" value="100" min="10" max="1000" step="10"> lp/mm</label>
+              <label title="鐢ㄥ摢涓?鍝簺娉㈤暱锛堝叏閮?澶嶈壊锛?>娉㈤暱 <select id="mtfWavelength"><option value="all">鍏ㄩ儴</option><option value="primary">涓绘尝闀?/option></select></label>
             </div>
             <svg id="mtfMain"></svg>
           </div>
         </div>
       </section>
-      <div id="vGrip" class="grip-h" title="拖动调整 2D/点列图 与 3D 高度"></div>
+      <div id="vGrip" class="grip-h" title="鎷栧姩璋冩暣 2D/鐐瑰垪鍥?涓?3D 楂樺害"></div>
       <section id="stage3d">
         <canvas id="view"></canvas>
         <div id="hud" class="hud">
-          <div class="title">Lens-3D · M1+</div>
-          <div class="status">Three.js 加载中…</div>
+          <div class="title">Lens-3D 路 M1+</div>
+          <div class="status">Three.js 鍔犺浇涓€?/div>
           <div id="fo" class="fo"></div>
         </div>
-        <div id="vertReadout" class="vertReadout">顶点 3D 坐标</div>
+        <div id="vertReadout" class="vertReadout">椤剁偣 3D 鍧愭爣</div>
         <div id="toolbar" class="toolbar">
           <div class="seg" id="viewSeg">
-            <button data-view="iso" class="vbtn active" type="button">等轴测</button>
+            <button data-view="iso" class="vbtn active" type="button">绛夎酱娴?/button>
             <button data-view="xy" class="vbtn" type="button">X-Y</button>
             <button data-view="yz" class="vbtn" type="button">Y-Z</button>
             <button data-view="xz" class="vbtn" type="button">X-Z</button>
           </div>
           <span class="sep"></span>
-          <button id="resetView" type="button">重置视角(Y-Z)</button>
-          <a id="backLauncher" class="btn-link" href="../">返回启动台</a>
+          <button id="resetView" type="button">閲嶇疆瑙嗚(Y-Z)</button>
+          <a id="backLauncher" class="btn-link" href="../">杩斿洖鍚姩鍙?/a>
           <span class="sep"></span>
-          <span class="hint">左键旋转 · 右键/滚轮缩放 · 中键平移</span>
+          <span class="hint">宸﹂敭鏃嬭浆 路 鍙抽敭/婊氳疆缂╂斁 路 涓敭骞崇Щ</span>
         </div>
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.0.1"></script>
+  <script type="module" src="js/main.js?v=1.0.2"></script>
 </body>
 </html>

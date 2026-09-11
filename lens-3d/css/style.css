@@ -59,6 +59,9 @@
 [fill="#4cc2ff"] { fill: var(--accent); }
 [stroke="#3ddc97"] { stroke: var(--ok); }
 [fill="#3ddc97"] { fill: var(--ok); }
+/* 浅色主题：黄色刻度点压暗 */
+[data-theme="light"] [fill="#ffd633"] { fill: #b8860b; }
+[data-theme="light"] [stroke="#ffd633"] { stroke: #b8860b; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);

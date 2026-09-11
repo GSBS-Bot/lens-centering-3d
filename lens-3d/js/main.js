@@ -81,6 +81,7 @@ const THEMES = {
   light:    { bg:'#eef1f5', grid1:'#c7d0d9', grid2:'#dde3e9', ray:0x2b3a48, accent:0x0b7fc4, accentSoft:0x2a9fd6, accentEdge:0x3aa7dd },
 };
 let rayBaseColor = 0xffffff;
+let currentTheme = 'blue';
 scene.background = new THREE.Color(THEMES.blue.bg);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);            // 3D 透视
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('view'), antialias: true });
@@ -105,6 +106,7 @@ function applyTheme(name, rerender) {
   try { localStorage.setItem('lens3d-theme', name); } catch (e) {}
   const t = THEMES[name];
   rayBaseColor = t.ray;
+  currentTheme = name;
   if (scene.background && scene.background.isColor) scene.background.set(t.bg);
   else scene.background = new THREE.Color(t.bg);
   if (grid) {
@@ -326,7 +328,7 @@ function updateRays() {
     };
     for (const fd of fields) {
       for (const lam of fd.lams) {
-        const col = cssToHex(lam.color);
+        const col = adaptHexNum(cssToHex(lam.color));
         for (const r of lam.rays) { nRay++; addLine(r, col, false, 0.5); }
         nSample += lam.nSample || 0;
         nVig += lam.nVig || 0;
@@ -383,7 +385,7 @@ function collateFieldRays(fields) {
   const out = [];
   for (const fd of fields) {
     for (const lam of fd.lams) {
-      const c = lam.color || '#ffd633';
+      const c = adaptHexStr(lam.color || '#ffd633');
       if (lam.chief) { const pts = clipPts(lam.chief.pts); if (pts && pts.length >= 2) out.push({ pts, color: c, edge: true, alpha: lam.chief.vignetted ? 0.4 : 1.0 }); }
       for (const r of lam.rays) { const pts = clipPts(r.pts); if (pts && pts.length >= 2) out.push({ pts, color: c, alpha: r.vignetted ? 0.25 : 0.7, dash: r.vignetted ? '4 3' : null }); }
     }
@@ -404,6 +406,15 @@ function cssToHex(c) {
   }
   return 0xffb300;
 }
+// 浅色主题下把过亮/过浅的颜色压暗，保证白底可读（深色主题原样返回）
+function adaptHexNum(n) {
+  if (currentTheme !== 'light') return n >>> 0;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const f = lum > 0.55 ? Math.max(0.45, 0.55 / lum) : 1;
+  return ((Math.round(r * f) << 16) | (Math.round(g * f) << 8) | Math.round(b * f)) >>> 0;
+}
+function adaptHexStr(hex) { return '#' + adaptHexNum(cssToHex(hex)).toString(16).padStart(6, '0'); }
 // ---- 点列图（M2b 第一步，参照 Zemax 样式）：每视场一子图、按波长分色、含比例尺/RMS·GEO ----
 // 艾里斑半径(第一暗环) = 1.22·λ·F#  (λ 转成 mm)
 function airyRadius(fno, lambdaUm) {
@@ -486,7 +497,7 @@ function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
   let lx = W - pad - 44;
   for (let i = wlList.length - 1; i >= 0; i--) {
     const w = wlList[i];
-    g.push(`<circle cx="${lx + 5}" cy="12" r="4.5" fill="${w.color}"/>`);
+    g.push(`<circle cx="${lx + 5}" cy="12" r="4.5" fill="${adaptHexStr(w.color)}"/>`);
     g.push(`<text x="${lx + 14}" y="16" fill="#9caab4" font-size="10" text-anchor="start" font-family="ui-monospace,monospace">${w.nm.toFixed(2)}</text>`);
     lx -= 52;
   }
@@ -507,7 +518,7 @@ function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
     // 点(按波长分色)；质心为原点
     const cX = px + plotSize / 2, cY = py + plotSize / 2;
     for (const gr of s.groups) for (const p of gr.points)
-      g.push(`<circle cx="${(cX + (p[0] - s.cx) * sc).toFixed(2)}" cy="${(cY - (p[1] - s.cy) * sc).toFixed(2)}" r="1.2" fill="${gr.color}" opacity=".92"/>`);
+      g.push(`<circle cx="${(cX + (p[0] - s.cx) * sc).toFixed(2)}" cy="${(cY - (p[1] - s.cy) * sc).toFixed(2)}" r="1.2" fill="${adaptHexStr(gr.color)}" opacity=".92"/>`);
     g.push(`<circle cx="${cX}" cy="${cY}" r="1.6" fill="#4cc2ff"/>`);
     if (airyR > 0) g.push(`<circle cx="${cX}" cy="${cY}" r="${(airyR * sc).toFixed(2)}" fill="none" stroke="#3ddc97" stroke-width="1" stroke-dasharray="3 2" opacity=".8"/>`);
     // 左侧比例尺(窗口半宽 wn=win, 标注盒宽 2*win, μm)
@@ -622,7 +633,7 @@ function populateMtfSelects() {
     mtfWavelength.value = (cur && mtfWavelength.querySelector(`option[value="${cur}"]`)) ? cur : 'all';
   }
 }
-function mtfHex(n) { return '#' + (n >>> 0).toString(16).padStart(6, '0'); }
+function mtfHex(n) { return '#' + adaptHexNum(n).toString(16).padStart(6, '0'); }
 function updateMtf() {
   if (!mtfMain) return;
   const nGrid = Math.max(7, Math.min(41, parseInt(mtfGrid?.value, 10) || 21)) | 0;
