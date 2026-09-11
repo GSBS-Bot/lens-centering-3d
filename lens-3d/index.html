@@ -7,14 +7,22 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>镜头数据编辑器</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=1.0.0">
 </head>
 <body>
   <div id="app">
     <aside id="side">
       <div class="side-head">
-        <div class="side-title">镜头数据编辑器</div>
-        <div class="side-sub">M1+ · LDM 表格直接编辑 · 2D/3D 实时同步</div>
+        <div>
+          <div class="side-title">镜头数据编辑器</div>
+          <div class="side-sub">M1+ · LDM 表格直接编辑 · 2D/3D 实时同步</div>
+        </div>
+        <div class="theme-switch" id="themeSwitch" title="切换主题">
+          <button class="theme-dot" data-theme="blue" title="深空蓝" style="background:#4cc2ff"></button>
+          <button class="theme-dot" data-theme="graphite" title="石墨黑" style="background:#cfd8e3"></button>
+          <button class="theme-dot" data-theme="violet" title="极夜紫" style="background:#b388ff"></button>
+          <button class="theme-dot" data-theme="forest" title="松林绿" style="background:#5fd0a0"></button>
+        </div>
       </div>
 
       <div class="topbar">
@@ -131,6 +139,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=0.8.4"></script>
+  <script type="module" src="js/main.js?v=1.0.0"></script>
 </body>
 </html>

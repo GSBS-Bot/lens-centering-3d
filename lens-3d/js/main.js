@@ -72,7 +72,14 @@ function applyPanelFromSys() {
 
 // ---------- Three.js scene ----------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#101418');
+// 主题：3D 背景/网格随主题切换（面板配色由 css 变量控制）
+const THEMES = {
+  blue:     { bg: '#0e131a', grid1: '#26313d', grid2: '#1d2631' },
+  graphite: { bg: '#141414', grid1: '#333333', grid2: '#242424' },
+  violet:   { bg: '#120e1b', grid1: '#3a2d52', grid2: '#271f37' },
+  forest:   { bg: '#0d1512', grid1: '#28483c', grid2: '#1d3128' },
+};
+scene.background = new THREE.Color(THEMES.blue.bg);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);            // 3D 透视
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('view'), antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -87,7 +94,36 @@ scene.add(new THREE.HemisphereLight('#dcefff', '#10141c', 1.0));
 const dir = new THREE.DirectionalLight('#ffffff', 1.6);
 dir.position.set(20, 30, 20);
 scene.add(dir);
-scene.add(new THREE.GridHelper(200, 50, '#2a3542', '#1c242d'));
+let grid = new THREE.GridHelper(200, 50, THEMES.blue.grid1, THEMES.blue.grid2);
+scene.add(grid);
+
+function applyTheme(name) {
+  if (!THEMES[name]) name = 'blue';
+  document.documentElement.dataset.theme = name;
+  try { localStorage.setItem('lens3d-theme', name); } catch (e) {}
+  const t = THEMES[name];
+  if (scene.background && scene.background.isColor) scene.background.set(t.bg);
+  else scene.background = new THREE.Color(t.bg);
+  if (grid) {
+    scene.remove(grid);
+    grid.geometry.dispose();
+    if (grid.material) grid.material.dispose();
+    grid = new THREE.GridHelper(200, 50, t.grid1, t.grid2);
+    scene.add(grid);
+  }
+  const sw = document.getElementById('themeSwitch');
+  if (sw) sw.querySelectorAll('.theme-dot').forEach(b => b.classList.toggle('active', b.dataset.theme === name));
+}
+(function initTheme() {
+  let saved = 'blue';
+  try { saved = localStorage.getItem('lens3d-theme') || 'blue'; } catch (e) {}
+  applyTheme(saved);
+  const sw = document.getElementById('themeSwitch');
+  if (sw) sw.addEventListener('click', e => {
+    const b = e.target.closest('.theme-dot');
+    if (b) applyTheme(b.dataset.theme);
+  });
+})();
 const origin = new THREE.AxesHelper(30); origin.material.opacity = 0.25; origin.material.transparent = true;
 scene.add(origin);
 
