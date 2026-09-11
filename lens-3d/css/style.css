@@ -149,4 +149,42 @@ select { background: #1b222b; color: var(--fg); border: 1px solid var(--line); b
 .toolbar .seg .vbtn:hover { background: #1c262f; color: var(--accent); }
 .toolbar .seg .vbtn.active { background: var(--accent); color: #062033; }
 
-@media (max-width: 900px) { #side { width: 44vw; min-width: 300px; } }
+/* 平板：左栏收窄 */
+@media (max-width: 1100px) and (min-width: 861px) { #side { width: 44vw; min-width: 300px; } }
+
+/* ---------- 移动端 / 小屏 / 横屏矮屏：改为纵向堆叠 + 整页滚动 ---------- */
+@media (max-width: 860px), (max-height: 520px) {
+  html, body { height: auto; overflow: auto; }
+  #app { flex-direction: column; height: auto; min-height: 100vh; }
+  #side { width: auto !important; min-width: 0; max-width: none; flex: 0 0 auto;
+    border-right: none; border-bottom: 1px solid var(--line); }
+  .grip-v, .grip-h { display: none; }
+
+  /* LDM 表格：整页滚动时限制高度，内部横向滚动 */
+  .ldm-root { flex: 0 0 auto; overflow: auto; max-height: 58vh; }
+
+  #stage { flex: 0 0 auto; }
+  #panel2d { flex: 0 0 auto; height: 42vh !important; min-height: 240px; }
+  #stage3d { flex: 0 0 auto; height: 60vh; min-height: 320px; }
+
+  .hud { top: 8px; left: 8px; padding: 7px 10px; font-size: 11px; }
+  .hud .title { font-size: 12px; }
+  .vertReadout { top: 8px; right: 8px; min-width: 0; padding: 6px 9px; font-size: 10px; line-height: 1.5; }
+
+  .toolbar { left: 8px; right: 8px; bottom: 8px; transform: none; flex-wrap: wrap;
+    justify-content: center; gap: 6px; padding: 6px 8px; }
+  .toolbar .hint { display: none; }
+  .toolbar .sep { display: none; }
+
+  .fieldbar input[type="text"] { width: 96px; }
+  .fieldbar, .topbar, .wlbar, .side-head { padding-left: 10px; padding-right: 10px; }
+  .wl-row { grid-template-columns: 18px 1fr 42px 18px 1fr 18px; gap: 4px; }
+}
+
+/* 手机竖屏：进一步精简 */
+@media (max-width: 480px) {
+  .vertReadout { display: none; }
+  #panel2d { height: 38vh !important; min-height: 220px; }
+  #stage3d { height: 56vh; min-height: 300px; }
+  .side-sub { display: none; }
+}
