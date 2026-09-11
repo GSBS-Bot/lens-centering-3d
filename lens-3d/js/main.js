@@ -238,8 +238,7 @@ function bindWaveEditor() {
   document.getElementById('wlPreset').addEventListener('click', () => {
     waveState = [
       { nm: 486.13, weight: 1, color: '#0eb6ff', primary: false },
-      { nm: 546.07, weight: 1, color: '#00d24a', primary: false },
-      { nm: 587.56, weight: 2, color: '#ffb300', primary: true },
+      { nm: 587.56, weight: 1, color: '#ffb300', primary: true },
       { nm: 656.27, weight: 1, color: '#ff2d00', primary: false },
     ];
     renderWaveEditor(); refreshField();
