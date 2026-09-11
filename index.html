@@ -16,6 +16,8 @@
   .wrap { width: min(620px, 100%); }
   h1 { font-size: 22px; margin: 0 0 6px; }
   .sub { color: var(--dim); font-size: 13px; margin-bottom: 28px; }
+  .badge { display: inline-block; background: var(--accent); color: #062033; font-weight: 700;
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; vertical-align: 1px; }
   .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
   .card { display: block; text-decoration: none; color: var(--fg); background: var(--panel);
     border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
@@ -26,17 +28,34 @@
   .card .d { font-size: 12px; color: var(--dim); line-height: 1.6; }
   .card .u { font-size: 11px; color: var(--accent); opacity: .85; margin-top: 8px;
     font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+
+  /* 版本记录 */
+  .ver { margin-top: 14px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 20px; }
+  .ver-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .ver-tag { background: var(--accent); color: #062033; font-weight: 700; font-size: 13px;
+    padding: 3px 11px; border-radius: 999px; }
+  .ver-name { font-size: 15px; font-weight: 600; }
+  .ver-date { margin-left: auto; color: var(--dim); font-size: 12px;
+    font-family: ui-monospace, Consolas, monospace; }
+  .ver-sec + .ver-sec { margin-top: 16px; }
+  .ver-h { font-size: 13px; font-weight: 600; color: var(--accent); margin-bottom: 8px; }
+  .ver-list { margin: 0; padding-left: 20px; }
+  .ver-list li { font-size: 12.5px; color: var(--fg); line-height: 1.8; }
+  .ver-list li b { color: #fff; font-weight: 600; }
+  .ver-list.plan li { color: var(--dim); }
+
   @media (max-width: 640px) { body { padding: 32px 14px; } h1 { font-size: 19px; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>镜头调芯 3D 可视化 · Lens-3D</h1>
-  <div class="sub">浏览器端光学镜头 3D 可视化 · 纯前端零后端</div>
+  <div class="sub">浏览器端光学镜头 3D 可视化 · 纯前端零后端 &nbsp;<span class="badge">v1.0 公示版</span></div>
   <div class="grid">
     <a class="card" href="./lens-3d/">
       <div class="t"><em>3D 工程</em> · lens-3d</div>
-      <div class="d">数据管理器 + 3D/2D 剖面 + 实光线追迹（一阶量 EFL/BFL/F#、渐晕、点列图）。视图可切等轴测 / X-Y / Y-Z / X-Z / 2D。</div>
+      <div class="d">数据管理器 + 3D/2D 剖面 + 实光线追迹（一阶量 EFL/BFL/F#、渐晕、点列图、相对照度、MTF）。视图可切等轴测 / X-Y / Y-Z / X-Z / 2D。</div>
       <div class="u">./lens-3d/</div>
     </a>
     <a class="card" href="https://anvcor.github.io/lens-bench" target="_blank" rel="noopener">
@@ -44,6 +63,41 @@
       <div class="d">本项目的规格参考与友站：镜头 MTF 仿真台在线版。面表编辑、Layout、MTF、像差图、双镜对比。</div>
       <div class="u">https://anvcor.github.io/lens-bench ↗</div>
     </a>
+  </div>
+
+  <div class="ver">
+    <div class="ver-head">
+      <span class="ver-tag">v1.0</span>
+      <span class="ver-name">公示版</span>
+      <span class="ver-date">2026-09-11</span>
+    </div>
+
+    <div class="ver-sec">
+      <div class="ver-h">1.0 网站功能</div>
+      <ul class="ver-list">
+        <li><b>数据管理器 LDM</b>：面表直接编辑（球面 / 圆锥 / 偶次非球面），插入删除、设光阑、撤销重做，导入 .zmx / .seq。</li>
+        <li><b>实光线追迹内核</b>：3D 旋转对称追迹 + 斯涅尔矢量折射；2026 玻璃库 Sellmeier 精确色散（1258 种牌号）。</li>
+        <li><b>一阶量与渐晕</b>：EFL / BFL / F#、入瞳直径与位置、逐面渐晕统计、按净口径自动渐晕。</li>
+        <li><b>视场 / 波长</b>：半视场角° 或像高 mm、多视场；波长权重编辑器（F/d/C 预设、自定义、主波长）。</li>
+        <li><b>2D 光路剖面</b>：镜片轮廓 + 光轴 + 光阑/像面标注，可平移缩放，主光线像高核对。</li>
+        <li><b>3D 可视化</b>：镜片实体 + 3D 光线，等轴测 / X-Y / Y-Z / X-Z 视图。</li>
+        <li><b>点列图</b>：Zemax 样式、按波长分色、艾里斑参考、RMS / GEO 半径。</li>
+        <li><b>相对照度</b>：一维曲线 + cos⁴θ 参考 + 设计视场标记。</li>
+        <li><b>MTF</b>：几何 / 波前（衍射 FFT）两种算法，子午 T / 弧矢 S，支持复色（全波长加权）。</li>
+        <li><b>多端适配</b>：桌面 / 平板 / 手机响应式布局。</li>
+      </ul>
+    </div>
+
+    <div class="ver-sec">
+      <div class="ver-h">未来更新计划</div>
+      <ul class="ver-list plan">
+        <li>离焦 MTF 曲线（through-focus）。</li>
+        <li>像差三图（球差 / 场曲像散 / 畸变）、Ray Fan、最佳对焦。</li>
+        <li>6-DOF 偏心 / 倾斜：镜片轴向 + 偏心(X/Y) + 倾斜可调，真实参与光线追迹（最高风险项）。</li>
+        <li>双镜头对比页、关于页。</li>
+        <li>运行性能优化与帮助文档。</li>
+      </ul>
+    </div>
   </div>
 </div>
 </body>
