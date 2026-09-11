@@ -3,6 +3,10 @@
 import * as THREE from '../vendor/three/three.module.js?v=0.8.4';
 import { surfaceSag, SURF } from './model.js?v=0.8.4';
 
+// 3D 主题调色板（由 main.js 的 applyTheme 设置；默认=深色主题）
+const THEME3D = { accent: 0x4cc2ff, accentSoft: 0x66d9ff, accentEdge: 0x8fe6ff };
+export function setTheme3D(o) { if (o) Object.assign(THEME3D, o); }
+
 // 面顶点 z（相对系统原点=物面）。为把原点移到“像面中心”，整体减去像面顶点 z。
 // 注意 surfaceZ(i) 在 model.js 里已跳过物面(下标0)的无穷厚物距。
 
@@ -97,7 +101,7 @@ export function buildSystemGroup(sys, kind = 'solid') {
   // CircleGeometry 默认在 xy 平面、法线沿 Z，本就垂直于光轴，无需再旋转
   const imageDisk = new THREE.Mesh(
     new THREE.CircleGeometry(10.8, 96),
-    new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: THEME3D.accentSoft, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
   );
   imageDisk.position.z = 0;
   imageDisk.name = 'imagePlane';
@@ -105,7 +109,7 @@ export function buildSystemGroup(sys, kind = 'solid') {
   group.add(imageDisk);
   const discEdge = new THREE.LineLoop(
     new THREE.EdgesGeometry(imageDisk.geometry, 0),
-    new THREE.LineBasicMaterial({ color: 0x8fe6ff, transparent: true, opacity: 0.9 })
+    new THREE.LineBasicMaterial({ color: THEME3D.accentEdge, transparent: true, opacity: 0.9 })
   );
   discEdge.position.z = 0;
   discEdge.name = 'imagePlaneEdge';
@@ -119,7 +123,7 @@ export function buildSystemGroup(sys, kind = 'solid') {
   }
   origin.add(new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, -3), new THREE.Vector3(0, 0, 3)]),
-    new THREE.LineBasicMaterial({ color: 0x4cc2ff, transparent: true, opacity: 0.9 })
+    new THREE.LineBasicMaterial({ color: THEME3D.accent, transparent: true, opacity: 0.9 })
   ));
   origin.position.z = 0;
   origin.name = 'originCross';
@@ -131,10 +135,10 @@ export function buildSystemGroup(sys, kind = 'solid') {
   const axGeo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -axLen - 6),
   ]);
-  axis.add(new THREE.Line(axGeo, new THREE.LineBasicMaterial({ color: 0x4cc2ff, transparent: true, opacity: 0.9 })));
+  axis.add(new THREE.Line(axGeo, new THREE.LineBasicMaterial({ color: THEME3D.accent, transparent: true, opacity: 0.9 })));
   const arrow = new THREE.Mesh(
     new THREE.ConeGeometry(1.1, 4, 16),
-    new THREE.MeshBasicMaterial({ color: 0x4cc2ff })
+    new THREE.MeshBasicMaterial({ color: THEME3D.accent })
   );
   arrow.rotation.x = -Math.PI / 2;       // 锥尖指向 -Z（物方）
   arrow.position.z = -axLen - 6;
@@ -162,7 +166,7 @@ export function buildSurfaceMarker(sys, surfaceList, surfaceIdx) {
   // 机械边缘环（细、浅蓝）
   const mechRing = new THREE.Mesh(
     new THREE.RingGeometry(me, me * 1.03, 96),
-    new THREE.MeshBasicMaterial({ color: 0x9fd4ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: THEME3D.accentEdge, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
   );
   mechRing.position.z = onSurf(z0, me);
   group.add(mechRing);

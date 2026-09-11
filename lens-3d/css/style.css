@@ -1,11 +1,14 @@
 /* ===================== 主题变量 ===================== */
-:root, [data-theme="blue"] {
+:root {
   --bg:#0e131a; --panel:#141c25; --panel2:#19222d; --line:#26313d; --line-soft:#1d2631;
   --fg:#d7e0ea; --dim:#8593a3; --dim2:#66727f;
   --accent:#4cc2ff; --accent-ink:#05202f; --ok:#3ddc97; --warn:#ffb021; --bad:#ff6b6b;
   --input:#0b1016; --hover:#1a2430; --sel:#123243; --sel-line:#1f4a5e;
   --glass:rgba(17,23,31,.82);
   --radius:10px; --shadow:0 10px 30px rgba(0,0,0,.4);
+  /* 图表墨迹（2D 剖面 / 点列 / 照度 / MTF 的 SVG） */
+  --ink:#E6EDF1; --ink2:#9CAAB4; --ink3:#6D7B86;
+  --chart-frame:#4F7D89; --chart-grid:#1b232d; --glass-fill:#1D3038; --mark-ink:#ffe9a3;
 }
 [data-theme="graphite"] {
   --bg:#141414; --panel:#1b1b1b; --panel2:#212121; --line:#2e2e2e; --line-soft:#262626;
@@ -31,6 +34,31 @@
   --glass:rgba(16,26,21,.85);
   --radius:10px; --shadow:0 10px 30px rgba(0,0,0,.45);
 }
+[data-theme="light"] {
+  --bg:#eef1f5; --panel:#ffffff; --panel2:#f3f6f9; --line:#d6dee6; --line-soft:#e7ecf1;
+  --fg:#26313d; --dim:#5f6d7b; --dim2:#93a0ad;
+  --accent:#0b7fc4; --accent-ink:#ffffff; --ok:#0f9d63; --warn:#c77700; --bad:#d64545;
+  --input:#f7f9fb; --hover:#eef3f7; --sel:#dcecf6; --sel-line:#8fc4e0;
+  --glass:rgba(255,255,255,.86);
+  --radius:10px; --shadow:0 10px 30px rgba(20,40,70,.14);
+  --ink:#26313d; --ink2:#5b6b7a; --ink3:#8593a3;
+  --chart-frame:#9aa9b6; --chart-grid:#e3e9ef; --glass-fill:#cfe0ea; --mark-ink:#8a5a00;
+}
+
+/* 图表墨迹随主题：用 CSS 覆盖 SVG 内联 fill/stroke 属性（深色主题下取值与原色一致，无副作用） */
+[fill="#E6EDF1"] { fill: var(--ink); }
+[fill="#9CAAB4"], [fill="#9caab4"] { fill: var(--ink2); }
+[fill="#6D7B86"] { fill: var(--ink3); }
+[fill="#1D3038"] { fill: var(--glass-fill); }
+[stroke="#4F7D89"] { stroke: var(--chart-frame); }
+[fill="#4F7D89"] { fill: var(--chart-frame); }
+[stroke="#1b232d"] { stroke: var(--chart-grid); }
+[stroke="#6D7B86"] { stroke: var(--ink3); }
+[fill="#ffe9a3"] { fill: var(--mark-ink); }
+[stroke="#4cc2ff"] { stroke: var(--accent); }
+[fill="#4cc2ff"] { fill: var(--accent); }
+[stroke="#3ddc97"] { stroke: var(--ok); }
+[fill="#3ddc97"] { fill: var(--ok); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
@@ -196,7 +224,7 @@ select:hover { border-color: var(--accent); }
   font-family: ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow); backdrop-filter: blur(6px); }
 .vertReadout .vr-title { color: var(--dim); font-size: 10px; letter-spacing: .04em; }
-.vertReadout .vr-xyz { color: #ffe9a3; }
+.vertReadout .vr-xyz { color: var(--mark-ink); }
 .toolbar { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius);
   font-size: 12px; color: var(--dim); user-select: none; white-space: nowrap;

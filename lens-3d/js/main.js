@@ -2,7 +2,7 @@
 import * as THREE from '../vendor/three/three.module.js?v=0.8.4';
 import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
 import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
-import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge } from './geom.js?v=0.8.4';
+import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.0.1';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile } from './import.js?v=0.8.4';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=0.8.4';
@@ -74,11 +74,13 @@ function applyPanelFromSys() {
 const scene = new THREE.Scene();
 // 主题：3D 背景/网格随主题切换（面板配色由 css 变量控制）
 const THEMES = {
-  blue:     { bg: '#0e131a', grid1: '#26313d', grid2: '#1d2631' },
-  graphite: { bg: '#141414', grid1: '#333333', grid2: '#242424' },
-  violet:   { bg: '#120e1b', grid1: '#3a2d52', grid2: '#271f37' },
-  forest:   { bg: '#0d1512', grid1: '#28483c', grid2: '#1d3128' },
+  blue:     { bg:'#0e131a', grid1:'#26313d', grid2:'#1d2631', ray:0xffffff, accent:0x4cc2ff, accentSoft:0x66d9ff, accentEdge:0x8fe6ff },
+  graphite: { bg:'#141414', grid1:'#333333', grid2:'#242424', ray:0xffffff, accent:0xcfd8e3, accentSoft:0xbfc9d4, accentEdge:0xaab6c2 },
+  violet:   { bg:'#120e1b', grid1:'#3a2d52', grid2:'#271f37', ray:0xffffff, accent:0xb388ff, accentSoft:0x9d6ff0, accentEdge:0xc9aaff },
+  forest:   { bg:'#0d1512', grid1:'#28483c', grid2:'#1d3128', ray:0xffffff, accent:0x5fd0a0, accentSoft:0x49b98a, accentEdge:0x8fe6c4 },
+  light:    { bg:'#eef1f5', grid1:'#c7d0d9', grid2:'#dde3e9', ray:0x2b3a48, accent:0x0b7fc4, accentSoft:0x2a9fd6, accentEdge:0x3aa7dd },
 };
+let rayBaseColor = 0xffffff;
 scene.background = new THREE.Color(THEMES.blue.bg);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);            // 3D 透视
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('view'), antialias: true });
@@ -97,11 +99,12 @@ scene.add(dir);
 let grid = new THREE.GridHelper(200, 50, THEMES.blue.grid1, THEMES.blue.grid2);
 scene.add(grid);
 
-function applyTheme(name) {
+function applyTheme(name, rerender) {
   if (!THEMES[name]) name = 'blue';
   document.documentElement.dataset.theme = name;
   try { localStorage.setItem('lens3d-theme', name); } catch (e) {}
   const t = THEMES[name];
+  rayBaseColor = t.ray;
   if (scene.background && scene.background.isColor) scene.background.set(t.bg);
   else scene.background = new THREE.Color(t.bg);
   if (grid) {
@@ -111,17 +114,19 @@ function applyTheme(name) {
     grid = new THREE.GridHelper(200, 50, t.grid1, t.grid2);
     scene.add(grid);
   }
+  if (typeof setTheme3D === 'function') setTheme3D({ accent: t.accent, accentSoft: t.accentSoft, accentEdge: t.accentEdge });
   const sw = document.getElementById('themeSwitch');
   if (sw) sw.querySelectorAll('.theme-dot').forEach(b => b.classList.toggle('active', b.dataset.theme === name));
+  if (rerender) { try { rebuildScene(false); renderLayout2D(); refreshActivePanel(); } catch (e) {} }
 }
 (function initTheme() {
   let saved = 'blue';
   try { saved = localStorage.getItem('lens3d-theme') || 'blue'; } catch (e) {}
-  applyTheme(saved);
+  applyTheme(saved, false);
   const sw = document.getElementById('themeSwitch');
   if (sw) sw.addEventListener('click', e => {
     const b = e.target.closest('.theme-dot');
-    if (b) applyTheme(b.dataset.theme);
+    if (b) applyTheme(b.dataset.theme, true);
   });
 })();
 const origin = new THREE.AxesHelper(30); origin.material.opacity = 0.25; origin.material.transparent = true;
@@ -315,7 +320,7 @@ function updateRays() {
       const geo = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(p[0], p[1], p[2])));
       const vigDim = tr.vignetted ? Math.max(0.1, 0.25) : alpha;
       rayGroup.add(new THREE.Line(geo, new THREE.LineBasicMaterial({
-        color: edge ? col : 0xffffff, transparent: true,
+        color: edge ? col : rayBaseColor, transparent: true,
         opacity: edge ? Math.min(1, vigDim + 0.15) : vigDim * 0.6,
       })));
     };
