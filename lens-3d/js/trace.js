@@ -42,6 +42,13 @@ export function indexOf(glass, lambdaUm = LAM_D) {
     // 简单 Sellmeier, 算不回 nd -> 回退 Cauchy, 保证 nd 正确。
     const nD = sel(LAM_D);
     if (isFinite(nD) && Math.abs(nD - p.nd) < 0.001) { const v = sel(lambdaUm); if (isFinite(v) && v > 1) return v; }
+    // 部分厂商(HOYA 等 .AGF)用 Laurent 幂级数: n² = c0 + c1λ² + c2/λ² + c3/λ⁴ + c4/λ⁶ + c5/λ⁸
+    // 其系数被存进了同一 D0..D9 槽位，上面按 Sellmeier 算不回 nd 会落到 Cauchy(蓝端误差大)。
+    // 这里再试 Laurent：若能复现 nd 就用它。
+    const D = p.sell;
+    const lau = (lam) => { const l2 = lam * lam; const n2 = D[0] + D[1] * l2 + D[2] / l2 + D[3] / (l2 * l2) + D[4] / (l2 * l2 * l2) + D[5] / (l2 * l2 * l2 * l2); return n2 > 0 ? Math.sqrt(n2) : NaN; };
+    const nD2 = lau(LAM_D);
+    if (isFinite(nD2) && Math.abs(nD2 - p.nd) < 0.001) { const v = lau(lambdaUm); if (isFinite(v) && v > 1) return v; }
   }
   const b = 1 / (LAM_F * LAM_F), c = 1 / (LAM_C * LAM_C);
   const B = (p.nd - 1) / (p.vd * (b - c));
