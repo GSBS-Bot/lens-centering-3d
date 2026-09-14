@@ -1072,9 +1072,6 @@ const LENS_CATALOG = [
     ['json:sigma-50mm-f1-4-dg-hsm-art', '50mm F1.4 DG HSM Art'],
     ['json:sigma-85mm-f1-4-dg-hsm-art', '85mm F1.4 DG HSM Art'],
   ]},
-  { group: '唯卓仕 Viltrox', items: [
-    ['json:viltrox-af-55mm-f1-8-evo-prototype', 'AF 55mm F1.8 EVO'],
-  ]},
   { group: 'SONGRAW', items: [
     ['json:songraw-af-85mm-f1-2', 'AF 85mm F1.2'],
   ]},

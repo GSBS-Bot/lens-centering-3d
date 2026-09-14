@@ -63,7 +63,7 @@
 <body>
 <div class="wrap">
   <h1>光学镜头模型3d可视化</h1>
-  <div class="sub">浏览器端光学镜头 3D 可视化 · 纯前端零后端 &nbsp;<span class="badge">v1.0</span></div>
+  <div class="sub">浏览器端光学镜头 3D 可视化 · 纯前端零后端 &nbsp;<span class="badge">v2.0</span></div>
   <div class="stats">
     <span id="busuanzi_container_site_uv">访客 <b id="busuanzi_value_site_uv">–</b> 人</span>
     <span class="sep">·</span>
@@ -84,12 +84,27 @@
 
   <div class="ver">
     <div class="ver-head">
-      <span class="ver-tag">v1.0</span>
-      <span class="ver-date">2026-09-11</span>
+      <span class="ver-tag">v2.0</span>
+      <span class="ver-date">2026-09-14</span>
     </div>
 
     <div class="ver-sec">
-      <div class="ver-h">1.0 网站功能</div>
+      <div class="ver-h">v2.0 更新与修正（相对 v1.0）</div>
+      <ul class="ver-list">
+        <li><b>MTF 离焦曲线</b>：新增 through-focus（离焦–MTF）曲线，支持<b>复色</b>与 <b>µm/mm</b> 单位切换。</li>
+        <li><b>迁移友站定焦镜头</b>：索尼 ×2、适马 ×2、SONGRAW ×1 共 5 颗，下拉按品牌分组。</li>
+        <li><b>一键导出 Zemax .zmx</b>：真实像高、固定半口径、当前工作 F#。</li>
+        <li><b>修正玻璃色散</b>：支持 Laurent 幂级数（HOYA 等），修复蓝端折射率错误（1e-3~5e-3），短波 MTF 恢复正常。</li>
+        <li><b>修正加权</b>：点列 RMS / 几何 MTF 按波长权重加权；几何 MTF 复色改为逐落点加权。</li>
+        <li><b>修正波前 MTF</b>：网格与采样、频率控件合并。</li>
+        <li><b>2D 光路并入 3D 视图切换</b>（等轴测 / X-Y / Y-Z / X-Z / 2D）。</li>
+        <li><b>界面美化 + 5 套主题</b>（含日间浅色）、移动端适配；信息窗/坐标窗可显隐。</li>
+        <li><b>启动台</b>：访问计数、留言板。</li>
+      </ul>
+    </div>
+
+    <div class="ver-sec">
+      <div class="ver-h">1.0 基础功能</div>
       <ul class="ver-list">
         <li><b>数据管理器 LDM</b>：面表直接编辑（球面 / 圆锥 / 偶次非球面），插入删除、设光阑、撤销重做，导入 .zmx / .seq。</li>
         <li><b>实光线追迹内核</b>：3D 旋转对称追迹 + 斯涅尔矢量折射；2026 玻璃库 Sellmeier 精确色散（1258 种牌号）。</li>
@@ -107,7 +122,6 @@
     <div class="ver-sec">
       <div class="ver-h">未来更新计划</div>
       <ul class="ver-list plan">
-        <li>离焦 MTF 曲线（through-focus）。</li>
         <li>像差三图（球差 / 场曲像散 / 畸变）、Ray Fan、最佳对焦。</li>
         <li>6-DOF 偏心 / 倾斜：镜片轴向 + 偏心(X/Y) + 倾斜可调，真实参与光线追迹（最高风险项）。</li>
         <li>双镜头对比页、关于页。</li>
