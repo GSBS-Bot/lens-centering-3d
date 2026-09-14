@@ -1,5 +1,6 @@
 // import.js — .zmx / .seq 导入器（M1 基础版：读取常用关键词）
 import { Surface, System, SURF } from './model.js?v=0.8.4';
+import { GLASS_DB } from './glassdb.js?v=0.8.4';
 
 function fixGlass(g) {
   if (!g) return 'AIR';
@@ -289,4 +290,54 @@ export function importFriendJson(obj) {
     }));
   }
   return sys;
+}
+
+// ---------------- 导出 Zemax .zmx（用当前 LDM 数据） ----------------
+function glassNDVD(g) {
+  const s = String(g == null ? '' : g).trim();
+  if (!s || /^AIR$/i.test(s)) return null;
+  const m = s.match(/^([\d.]+)\/([\d.]+)/);
+  if (m) return { name: 'MODEL', nd: +m[1], vd: +m[2] };
+  const db = GLASS_DB[s.toUpperCase()];
+  return db ? { name: s, nd: db[0], vd: db[1] } : { name: s, nd: null, vd: null };
+}
+const znum = v => (v == null || !isFinite(v)) ? '' : String(+v.toPrecision(12));
+// opts: { fno, fields, fmode }  fields=视场值(与 fmode 对应)，fno=系统孔径(工作F#)
+export function exportZmx(sys, opts = {}) {
+  const fields = (opts.fields && opts.fields.length) ? opts.fields : (sys.fields || [0]);
+  const fmode = opts.fmode || sys.fmode || 'height';
+  const L = [];
+  L.push('VERS 231205 279 20120530 20120530');
+  L.push('MODE SEQ');
+  L.push('NAME ' + (sys.name || 'lens'));
+  L.push('PFIL 0 0 0');
+  L.push('LANG 0');
+  L.push('UNIT MM X W X CM MR CPMM');
+  if (isFinite(opts.fno) && opts.fno > 0) L.push('FNUM ' + znum(opts.fno));
+  L.push('FTYP ' + (fmode === 'height' ? '3' : '0') + ' 0 3 3 0 0 0 3');   // 3=真实像高, 0=角度
+  L.push('XFLN ' + fields.map(() => '0').join(' '));
+  L.push('YFLN ' + fields.map(v => znum(v)).join(' '));
+  (sys.wavelengths || []).forEach((w, i) => L.push(`WAVM ${i + 1} ${znum((w.nm || 587.56) / 1000)} ${znum(w.weight ?? 1)}`));
+  L.push('PWAV ' + ((sys.primary ?? 0) + 1));
+  sys.surfaces.forEach((s, i) => {
+    const isAsp = s.asph && s.asph.some(a => a);
+    L.push('SURF ' + i);
+    L.push('  TYPE ' + (isAsp ? 'EVENASPH' : 'STANDARD'));
+    const c = (s.radius && isFinite(s.radius) && s.radius !== 0) ? 1 / s.radius : 0;
+    L.push('  CURV ' + znum(c));
+    L.push('  DISZ ' + ((s.thi == null || !isFinite(s.thi) || s.thi > 1e9) ? 'INFINITY' : znum(s.thi)));
+    if (i > 0 && s.glass && !/^AIR$/i.test(s.glass)) {
+      const g = glassNDVD(s.glass);
+      L.push(`  GLAS ${g.name} 0 0 ${g.nd == null ? '' : znum(g.nd)} ${g.vd == null ? '' : znum(g.vd)} 0`);
+    }
+    const semi = (s.semi != null) ? s.semi : s.mSemi;
+    if (semi) L.push('  DIAM ' + znum(semi) + ' 0 0 0 1 ""');   // 半口径固定为 LDM 值
+    if (i > 0 && isAsp) {
+      if (s.k) L.push('  CONI ' + znum(s.k));
+      L.push('  PARM 1 0');
+      s.asph.forEach((a, k) => { if (a) L.push(`  PARM ${k + 2} ${znum(a)}`); });
+    } else if (i > 0 && s.k) L.push('  CONI ' + znum(s.k));
+    if (i === sys.stopIndex) L.push('  STOP');
+  });
+  return L.join('\r\n') + '\r\n';
 }

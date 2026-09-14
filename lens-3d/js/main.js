@@ -4,7 +4,7 @@ import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
 import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
-import { importFile, importFriendJson } from './import.js?v=1.3.1';
+import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.0';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=1.3.4';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.3.4';
 
@@ -1189,6 +1189,26 @@ if (autoVigBtn) autoVigBtn.addEventListener('click', runAutoVignette);
 bindWaveEditor();
 
 importBtn.addEventListener('click', () => fileInput.click());
+// 导出当前 LDM 为 Zemax .zmx（视场=真实像高/角度、半口径固定=LDM值、孔径=当前工作F#）
+const exportBtn = document.getElementById('exportZmx');
+if (exportBtn) exportBtn.addEventListener('click', () => {
+  try {
+    const fno = parseFloat(wfnEl?.value);
+    const fields = parseFields(fvalsEl?.value);
+    const fmode = fmodeEl?.value === 'angle' ? 'angle' : 'height';
+    const text = exportZmx(sys, { fno: isFinite(fno) ? fno : sys.fno, fields: fields.length ? fields : sys.fields, fmode });
+    const name = String(sys.name || 'lens').replace(/[\\/:*?"<>|]/g, '_') + '.zmx';
+    const buf = new Uint8Array(2 + text.length * 2);          // UTF-16LE + BOM（Zemax 格式）
+    buf[0] = 0xFF; buf[1] = 0xFE;
+    for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); buf[2 + i * 2] = c & 0xFF; buf[2 + i * 2 + 1] = (c >> 8) & 0xFF; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    setStatus('已导出 ' + name, true);
+  } catch (e) { fail(e); }
+});
 fileInput.addEventListener('change', async () => {
   const f = fileInput.files && fileInput.files[0];
   if (!f) return;
