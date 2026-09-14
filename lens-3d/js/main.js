@@ -64,7 +64,8 @@ function lensTextFromBuffer(buf) {
   if (u.length > 1 && u[0] === 0xfe && u[1] === 0xff) return new TextDecoder('utf-16be').decode(u);
   return new TextDecoder('utf-8').decode(u);
 }
-// 载入系统后，把视场/模式/波长同步到左侧面板
+// 载入系统后，把视场/模式/波长/工作F数同步到左侧面板
+let pendingAutoVig = false;   // 文件未给 F# → 置 1 并自动渐晕(得到按净口径的 F#)
 function applyPanelFromSys() {
   if (fvalsEl) {
     // 视场取自文件读取(sys.fields)；无则仅轴上(0)。不编造 0.707/满场。
@@ -72,6 +73,10 @@ function applyPanelFromSys() {
     fvalsEl.value = f.join(' ');
   }
   if (fmodeEl) fmodeEl.value = (sys.fmode === 'height') ? 'height' : 'angle';
+  // 工作F数：文件有 F# 用之；否则置 1 并标记自动渐晕
+  const fno = sys.fno;
+  if (isFinite(fno) && fno > 0) { if (wfnEl) wfnEl.value = +(+fno).toFixed(2); pendingAutoVig = false; }
+  else { if (wfnEl) wfnEl.value = 1; pendingAutoVig = true; }
   renderWaveEditor();
 }
 
@@ -326,7 +331,7 @@ function updateRays() {
     if (isFinite(wfn) && wfn > 0) { sys.fno = wfn; sys.apmode = 'fno'; }
     const mode = fmodeEl?.value || 'angle';
     const list = parseFields(fvalsEl?.value); if (!list.length) list.push(0);
-    const nPupil = Math.max(1, Math.min(33, parseInt(npupilEl?.value, 10) || 9)) | 0;
+    const nPupil = Math.max(1, Math.min(33, parseInt(npupilEl?.value, 10) || 15)) | 0;
     const wl = activeLambdas();
     const res = traceFields(sys, surfaceList, { mode, fields: list, nPupil, lambdas: wl.lambdas, primary: wl.primary, vigCoefs: (sys.vigCoefs || null) });
     fields = res.fields; EP = res.EP; primaryNm = res.primaryNm;
@@ -1060,7 +1065,7 @@ if (mtfFocusUnit) mtfFocusUnit.addEventListener('change', () => {
   if (mtfFocusUnitLabel) mtfFocusUnitLabel.textContent = mtfFocusUnit.value === 'mm' ? 'mm' : 'µm';
   updateMtf();
 });
-if (autoVigBtn) autoVigBtn.addEventListener('click', () => {
+function runAutoVignette() {
   const on = Array.isArray(sys.vigCoefs);
   try {
     if (on) { sys.vigCoefs = null; }
@@ -1086,7 +1091,8 @@ if (autoVigBtn) autoVigBtn.addEventListener('click', () => {
     }
     rebuildScene(true); renderLayout2D();
   } catch (e) { console.error('自动渐晕报错', e); setStatus('自动渐晕报错：' + (e && e.message || e), false); }
-});
+}
+if (autoVigBtn) autoVigBtn.addEventListener('click', runAutoVignette);
 bindWaveEditor();
 
 importBtn.addEventListener('click', () => fileInput.click());
@@ -1101,6 +1107,7 @@ fileInput.addEventListener('change', async () => {
     // 否则 updateRays 读到的是上一系统的 fvals/waveState，导致首屏追迹用错视场/波长(需再刷新才对)。
     applyPanelFromSys();
     syncAll(0);
+    if (pendingAutoVig) runAutoVignette();
     const warn = (ns.warnings && ns.warnings.length) ? ' · 提示 ' + ns.warnings.join('；') : '';
     setStatus(`导入 ${f.name} · 面数 ${sys.surfaces.length}${warn}`, true);
   } catch (e) { fail(e); }
@@ -1142,11 +1149,13 @@ async function loadDefault() {
     freshSys(ns);
     applyPanelFromSys();
     syncAll(0);
+    if (pendingAutoVig) runAutoVignette();
     resize();
     setStatus(`默认载入 «${sys.name}» · 面 ${sys.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
   } catch (e) {
     console.error('默认文件载入失败，回退 demo', e);
     freshSys(demoSingleElement());
+    applyPanelFromSys();
     syncAll(0);
     resize();
   }
