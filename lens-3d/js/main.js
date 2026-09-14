@@ -44,6 +44,8 @@ const mtfWavelength = document.getElementById('mtfWavelength');
 const mtfMode = document.getElementById('mtfMode');
 const mtfNuLabel = document.getElementById('mtfNuLabel');
 const mtfFocusRange = document.getElementById('mtfFocusRange');
+const mtfFocusUnit = document.getElementById('mtfFocusUnit');
+const mtfFocusUnitLabel = document.getElementById('mtfFocusUnitLabel');
 const vigEl = document.getElementById('fieldVig');
 
 function setStatus(msg, ok) {
@@ -773,12 +775,15 @@ function updateMtfFocus() {
   const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
   const lamUm = (pri.nm || 587.56) / 1000;
   const fno = (lastTrace.fo && isFinite(lastTrace.fo.fno)) ? lastTrace.fo.fno : (sys.fno || 0);
-  if (!(fno > 0)) { renderMtfFocusSVG(mtfMain, { dz: [], sets: [], ref: null, nuEval: 0, nm: pri.nm || 587.56, fno: 0, nuC: 0, mode }); return; }
+  const unit = mtfFocusUnit?.value === 'mm' ? 'mm' : 'um';
+  const toUm = unit === 'mm' ? 1000 : 1;                           // 1 显示单位 = toUm µm
+  if (!(fno > 0)) { renderMtfFocusSVG(mtfMain, { dz: [], sets: [], ref: null, nuEval: 0, nm: pri.nm || 587.56, fno: 0, nuC: 0, mode, unit, toUm }); return; }
   const nuC = 1 / (lamUm * fno);                                   // 衍射截止 lp/mm
   const nuEval = Math.max(1, Math.min(1000, parseFloat(mtfNu?.value) || 100));
-  const range = Math.max(1, parseFloat(mtfFocusRange?.value) || (4 * lamUm * fno * fno));  // 轴向 ±µm
+  const rangeIn = parseFloat(mtfFocusRange?.value);
+  const rangeUm = (isFinite(rangeIn) && rangeIn > 0) ? rangeIn * toUm : (4 * lamUm * fno * fno);  // 轴向 ±µm
   const NSTEP = 41;
-  const dz = []; for (let k = 0; k < NSTEP; k++) dz.push(-range + 2 * range * k / (NSTEP - 1));
+  const dz = []; for (let k = 0; k < NSTEP; k++) dz.push(-rangeUm + 2 * rangeUm * k / (NSTEP - 1));
   const w20 = dz.map(z => defocusWaves(z / 1000, fno, lamUm));     // 波差(波)
   const sets = fields.map(fv => {
     const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 64 });
@@ -788,7 +793,7 @@ function updateMtfFocus() {
   });
   const s0 = nuC > 0 ? Math.min(0.999, nuEval / nuC) : 0;          // 衍射极限参考(理想圆孔·同离焦)
   const ref = s0 > 0 ? throughFocusMTF(128, 31, s0, w20) : null;
-  renderMtfFocusSVG(mtfMain, { dz, sets, ref, nuEval, nm: pri.nm || 587.56, fno, nuC, mode });
+  renderMtfFocusSVG(mtfMain, { dz, sets, ref, nuEval, nm: pri.nm || 587.56, fno, nuC, mode, unit, toUm });
 }
 function renderMtfFocusSVG(el, d) {
   const W = 660, H = 380, ml = 56, mr = 24, mt = 40, mb = 92;
@@ -796,6 +801,8 @@ function renderMtfFocusSVG(el, d) {
   const dmax = Math.max(1e-9, ...d.dz.map(Math.abs));
   const xs = z => ml + (z + dmax) / (2 * dmax) * pw;
   const ys = m => mt + (1 - Math.max(0, Math.min(1, m))) * ph;
+  const toUm = d.toUm || 1, unitTxt = d.unit === 'mm' ? 'mm' : 'µm';
+  const fmt = v => { const a = Math.abs(v); return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : v.toFixed(3); };
   const g = [];
   g.push(`<text x="${ml - 44}" y="20" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">MTF 离焦曲线（波前 · 衍射 FFT） · 面： 像面</text>`);
   g.push(`<text x="${W - mr}" y="20" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">@${Math.round(d.nm)}nm · F#${d.fno > 0 ? d.fno.toFixed(2) : '—'} · 评估 ${Math.round(d.nuEval)} lp/mm</text>`);
@@ -808,10 +815,10 @@ function renderMtfFocusSVG(el, d) {
   for (let k = 0; k <= nx; k++) {
     const z = -dmax + 2 * dmax * k / nx, x = xs(z);
     g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${z.toFixed(Math.abs(z) < 10 ? 1 : 0)}</text>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${fmt(z / toUm)}</text>`);
   }
   g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
-  g.push(`<text x="${ml + pw / 2}" y="${mt + ph + 32}" text-anchor="middle" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">离焦 (µm)</text>`);
+  g.push(`<text x="${ml + pw / 2}" y="${mt + ph + 32}" text-anchor="middle" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">离焦 (${unitTxt})</text>`);
   if (d.ref) {
     const pts = d.ref.map((m, k) => `${xs(d.dz[k]).toFixed(1)},${ys(m).toFixed(1)}`).join(' ');
     g.push(`<polyline points="${pts}" fill="none" stroke="#6D7B86" stroke-width="1.2" stroke-dasharray="5 3"/>`);
@@ -821,7 +828,7 @@ function renderMtfFocusSVG(el, d) {
   if (d.dz.length) {
     const xb = xs(d.dz[bestI]);
     g.push(`<line x1="${xb.toFixed(1)}" y1="${mt}" x2="${xb.toFixed(1)}" y2="${mt + ph}" stroke="#3ddc97" stroke-width="1" stroke-dasharray="3 3" opacity=".9"/>`);
-    g.push(`<text x="${(xb + 4).toFixed(1)}" y="${mt + 12}" fill="#3ddc97" font-size="10" font-family="ui-monospace,monospace">最佳焦面 ${d.dz[bestI].toFixed(1)}µm</text>`);
+    g.push(`<text x="${(xb + 4).toFixed(1)}" y="${mt + 12}" fill="#3ddc97" font-size="10" font-family="ui-monospace,monospace">最佳焦面 ${fmt(d.dz[bestI] / toUm)} ${unitTxt}</text>`);
   }
   d.sets.forEach((s, i) => {
     const c = mtfHex(FIELDCOLS[i % FIELDCOLS.length]);
@@ -1043,6 +1050,16 @@ for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength, mtfMode, mtf
   if (el) el.addEventListener('input', () => updateMtf());
   if (el) el.addEventListener('change', () => updateMtf());
 }
+// 离焦单位切换：换算「范围」数值并刷新
+if (mtfFocusUnit) mtfFocusUnit.addEventListener('change', () => {
+  const toUm = mtfFocusUnit.value === 'mm' ? 1000 : 1;
+  const prev = parseFloat(mtfFocusUnit.dataset.toUm || '1');
+  const rv = parseFloat(mtfFocusRange?.value);
+  if (mtfFocusRange && isFinite(rv)) mtfFocusRange.value = +(rv * prev / toUm).toPrecision(6);
+  mtfFocusUnit.dataset.toUm = String(toUm);
+  if (mtfFocusUnitLabel) mtfFocusUnitLabel.textContent = mtfFocusUnit.value === 'mm' ? 'mm' : 'µm';
+  updateMtf();
+});
 if (autoVigBtn) autoVigBtn.addEventListener('click', () => {
   const on = Array.isArray(sys.vigCoefs);
   try {
