@@ -215,3 +215,68 @@ export function importFile(filename, text) {
   if (ext === 'seq') return parseSeq(text);
   return null;
 }
+
+// ---------------- 友站 lens-bench JSON（tx 文本表） ----------------
+// tx 每行：R  T  [材料]  [半口径| -]  [k]  [A4 A6 A8 …]
+function normGlass(m) {
+  const t = String(m == null ? '' : m).trim();
+  if (!t || t === '-' || /^air$/i.test(t)) return 'AIR';
+  const mm = t.match(/^([\d.]+)\/([\d.]+)/);
+  if (mm) return `${mm[1]}/${mm[2]}`;                       // 模型玻璃 nd/vd[/ΔPgF]
+  let name = t.replace(/_[A-Za-z]+$/, '');                  // 去目录后缀 _CDGM/_HOYA…
+  if (/^[HD][A-Z]/.test(name) && name.indexOf('-') < 0) name = name[0] + '-' + name.slice(1);  // CDGM HZF73 -> H-ZF73
+  const ALIAS = { 'S-NBH53': 'S-NBH53V' };
+  return ALIAS[name.toUpperCase()] || name;
+}
+export function importFriendJson(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  const rows = String(obj.tx || '').split(/\r?\n/).filter(l => l.trim());
+  if (!rows.length) return null;
+  const sys = new System({ name: obj.name || obj.id || 'lens' });
+  const isPlainNumber = s => /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s);
+  const parseRadius = s => {
+    const t = String(s).toLowerCase();
+    if (t === 'inf' || t === 'infinity' || t === '∞' || t === '-' || t === 'plano' || t === 'flat') return 0;
+    const v = parseFloat(s); return isFinite(v) ? v : 0;
+  };
+  const sdAp = Array.isArray(obj.sdAp) ? obj.sdAp : null;
+  const sdDraw = Array.isArray(obj.sdDraw) ? obj.sdDraw : null;
+  const surfaces = [new Surface({ type: SURF.OBJECT, thi: Infinity })];
+  rows.forEach((raw, i) => {
+    const tk = raw.trim().split(/[\s,;\t]+/).filter(x => x.length);
+    if (tk.length < 2) return;
+    const s = new Surface({});
+    s.radius = parseRadius(tk[0]);
+    s.thi = parseFloat(tk[1]);
+    let idx = 2;
+    if (tk.length > 2 && !isPlainNumber(tk[2])) { s.glass = normGlass(tk[2]); idx = 3; }
+    if (tk.length > idx && tk[idx] !== '-') { const v = parseFloat(tk[idx]); if (isFinite(v) && v > 0) s.semi = v; }
+    if (tk.length > idx) idx++;
+    if (tk.length > idx) { const kv = parseFloat(tk[idx]); if (isFinite(kv)) { s.k = kv; idx++; } }
+    const asph = [];
+    for (; idx < tk.length; idx++) { const av = parseFloat(tk[idx]); asph.push(isFinite(av) ? av : 0); }
+    while (asph.length && asph[asph.length - 1] === 0) asph.pop();
+    if (asph.length) { s.asph = asph; s.type = SURF.ASP; }
+    const a = sdAp ? sdAp[i] : null, d = sdDraw ? sdDraw[i] : null;
+    const sv = (isFinite(a) && a > 0) ? a : ((isFinite(d) && d > 0) ? d : null);
+    if (sv) { if (s.semi == null) s.semi = sv; s.mSemi = (isFinite(d) && d > 0) ? d : sv; }
+    surfaces.push(s);
+  });
+  surfaces.push(new Surface({ type: SURF.IMAGE, thi: 0 }));
+  sys.surfaces = surfaces;
+  // 友站 stop 是 1-based 行号；我们 surfaces[0]=物面，故下标 = stop
+  if (obj.stop != null && obj.stop >= 0 && obj.stop < surfaces.length) sys.stopIndex = obj.stop;
+  sys.fno = isFinite(obj.fno) ? obj.fno : null;
+  sys.apmode = 'fno';
+  sys.fmode = obj.fmode === 'angle' ? 'angle' : 'height';
+  const fv = (Array.isArray(obj.vigH) && obj.vigH.length) ? obj.vigH : [0];
+  sys.fields = fv.map(Number).filter(n => isFinite(n));
+  sys.maxField = sys.fields.length ? Math.max(...sys.fields.map(v => Math.abs(v))) : 0;
+  if (obj.objd != null && isFinite(obj.objd) && obj.objd > 0) { surfaces[0].thi = obj.objd; sys.objectDist = obj.objd; }
+  else { surfaces[0].thi = Infinity; sys.objectDist = Infinity; }
+  sys.wavelengths = (Array.isArray(obj.wl) ? obj.wl : [])
+    .map(w => ({ nm: parseFloat(w[0]), weight: parseFloat(w[1]) || 1, color: w[2] || '' }))
+    .filter(w => isFinite(w.nm));
+  sys.primary = isFinite(obj.pri) ? obj.pri : 0;
+  return sys;
+}

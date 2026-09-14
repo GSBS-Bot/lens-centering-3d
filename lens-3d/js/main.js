@@ -4,7 +4,7 @@ import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
 import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
-import { importFile } from './import.js?v=0.8.4';
+import { importFile, importFriendJson } from './import.js?v=1.3.0';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=0.8.4';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.2.3';
 
@@ -1036,12 +1036,44 @@ if (refreshBtn) refreshBtn.addEventListener('click', () => { sys = ldm.sys; rebu
 
 // ---------- 控件 ----------
 // 顶部动作
+// 示例镜头目录（本地 .zmx + 友站迁移的定焦镜头，按品牌分组）
+const LENS_CATALOG = [
+  { group: '本地示例', items: [
+    ['zmx:Advanced_SC_doubleGauss_final.zmx', '双高斯 Advanced_SC'],
+    ['zmx:Cooke 40 degree field.zmx', 'Cooke 40° 三片'],
+  ]},
+  { group: '索尼 Sony', items: [
+    ['json:sony-fe-50mm-f1-2-gm', 'FE 50mm F1.2 GM'],
+    ['json:sony-fe-85mm-f1-4-gm', 'FE 85mm F1.4 GM'],
+  ]},
+  { group: '适马 SIGMA', items: [
+    ['json:sigma-50mm-f1-4-dg-hsm-art', '50mm F1.4 DG HSM Art'],
+    ['json:sigma-85mm-f1-4-dg-hsm-art', '85mm F1.4 DG HSM Art'],
+  ]},
+  { group: '唯卓仕 Viltrox', items: [
+    ['json:viltrox-af-55mm-f1-8-evo-prototype', 'AF 55mm F1.8 EVO'],
+  ]},
+  { group: 'SONGRAW', items: [
+    ['json:songraw-af-85mm-f1-2', 'AF 85mm F1.2'],
+  ]},
+];
+function buildLensMenu() {
+  if (!demoSel) return;
+  demoSel.innerHTML = LENS_CATALOG.map(g =>
+    `<optgroup label="${g.group}">` +
+    g.items.map(([v, t]) => `<option value="${v}">${t}</option>`).join('') +
+    `</optgroup>`).join('');
+}
+buildLensMenu();
 function loadCurrent() {
-  const file = demoSel.value;
-  if (!file) return;
-  loadZmxFile(file)
-    .then(s => setStatus(`载入 «${s.name}» · 面 ${s.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true))
-    .catch(e => fail(e));
+  const v = demoSel.value;
+  if (!v) return;
+  const ci = v.indexOf(':');
+  const kind = ci < 0 ? 'zmx' : v.slice(0, ci);
+  const id = ci < 0 ? v : v.slice(ci + 1);
+  const p = kind === 'json' ? loadFriendLens(id) : loadZmxFile(id);
+  p.then(s => setStatus(`载入 «${s.name}» · 面 ${s.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true))
+   .catch(e => fail(e));
 }
 document.getElementById('newDemo').addEventListener('click', loadCurrent);
 demoSel.addEventListener('change', loadCurrent);
@@ -1181,6 +1213,20 @@ async function loadZmxFile(file, resetView = true) {
   if (pendingAutoVig) runAutoVignette();
   resize();
   if (resetView) fitCamera('2d');   // 默认显示 2D 光路
+  return sys;
+}
+// 载入友站迁移的镜头 JSON（lenses/<id>.json）
+async function loadFriendLens(id, resetView = true) {
+  const r = await fetch('../lenses/' + encodeURIComponent(id) + '.json');
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const ns = importFriendJson(await r.json());
+  if (!ns) throw new Error('解析失败');
+  freshSys(ns);
+  applyPanelFromSys();
+  syncAll(0);
+  if (pendingAutoVig) runAutoVignette();
+  resize();
+  if (resetView) fitCamera('2d');
   return sys;
 }
 async function loadDefault() {
