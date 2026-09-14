@@ -1136,7 +1136,7 @@ window.addEventListener('unhandledrejection', ev => fail(ev.reason));
 
 // ---------- 启动 ----------
 // 默认显示本地示例 Zemax 文件（UTF-16LE）；失败回退到内置单片双凸。
-const DEFAULT_ZMX = { dir: '测试zemax文件', file: 'Cooke 40 degree field.zmx' };
+const DEFAULT_ZMX = { dir: '测试zemax文件', file: 'Advanced_SC_doubleGauss_final.zmx' };
 async function loadDefault() {
   // 相对路径(../)而非绝对(/), 兼容本地服务与 GitHub Pages 子路径(如 /<repo>/lens-3d/)部署。
   // 本地: /lens-3d/ -> ../测试zemax文件/... = /测试zemax文件/... ; Pages: /repo/lens-3d/ -> /repo/测试zemax文件/...

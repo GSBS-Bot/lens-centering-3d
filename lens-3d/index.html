@@ -105,7 +105,7 @@
             <div class="spot-ctrl">
               <label title="MTF 算法">算法 <select id="mtfAlgo"><option value="geo">几何</option><option value="diff">波前(衍射)</option></select></label>
               <label title="曲线类型：频率曲线 / 离焦曲线(through-focus)">模式 <select id="mtfMode"><option value="freq">频率曲线</option><option value="focus">离焦曲线</option></select></label>
-              <label title="离焦曲线的轴向范围(±)，留空按 F# 自动">范围 <input id="mtfFocusRange" type="number" min="0" step="any" placeholder="自动"> <span id="mtfFocusUnitLabel">µm</span></label>
+              <label title="离焦曲线的轴向范围(±)，留空按 F# 自动">范围 <input id="mtfFocusRange" type="number" min="0" step="any" value="50" placeholder="自动"> <span id="mtfFocusUnitLabel">µm</span></label>
               <label title="离焦单位(µm / mm)">单位 <select id="mtfFocusUnit"><option value="um">µm</option><option value="mm">mm</option></select></label>
               <label title="显示哪些视场">场 <select id="mtfField"><option value="all">全部</option></select></label>
               <label title="入瞳采样网格密度">网格 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
@@ -143,6 +143,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.1.5"></script>
+  <script type="module" src="js/main.js?v=1.1.6"></script>
 </body>
 </html>
