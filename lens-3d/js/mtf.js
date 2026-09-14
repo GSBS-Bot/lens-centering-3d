@@ -171,6 +171,42 @@ export function throughFocusFromPupil(re, im, N, R, nuC, nu, w20List) {
   return { T, S };
 }
 
+/* ---------- 复色离焦（P2）：多波长按权重复数加权 ----------
+   pupils = [{ re, im, N, R, nuC, weight, lambdaUm }]（各波长共用同一 OPD 参考球心）；
+   nu: 评估频率(lp/mm)；dzUmList: 轴向离焦(µm)；fno: 工作F数。
+   对每个 dz：逐 λ 由 W20=Δz/(8F#²λ) 加离焦相位 → OTF → 在 ν 处取复值 → Σw·OTF → |·|。
+   返回 { T:[], S:[] }。 */
+export function throughFocusMultiColor(pupils, nu, dzUmList, fno) {
+  const T = [], S = [];
+  for (let q = 0; q < dzUmList.length; q++) {
+    const dzMm = dzUmList[q] / 1000;
+    let rT = 0, iT = 0, rS = 0, iS = 0, wsum = 0;
+    for (const p of pupils) {
+      const w = p.weight ?? 1;
+      const w20 = defocusWaves(dzMm, fno, p.lambdaUm);
+      const N = p.N, R = p.R, o = N >> 1, R2 = R * R;
+      const rr = new Float64Array(N * N), ii = new Float64Array(N * N);
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const k = y * N + x, pr = p.re[k], pi = p.im[k];
+        if (!pr && !pi) continue;
+        const dx = x - o, dy = y - o;
+        const ph = 2 * Math.PI * w20 * (dx * dx + dy * dy) / R2;
+        const cs = Math.cos(ph), sn = Math.sin(ph);
+        rr[k] = pr * cs - pi * sn; ii[k] = pr * sn + pi * cs;
+      }
+      const g = otfFromPupil(rr, ii, N);
+      const s = p.nuC > 0 ? nu / p.nuC : 0;
+      const cT = sampleOtfComplex(g, N, R, s, 'T');
+      const cS = sampleOtfComplex(g, N, R, s, 'S');
+      rT += w * cT.re; iT += w * cT.im; rS += w * cS.re; iS += w * cS.im; wsum += w;
+    }
+    const d = wsum || 1;
+    T.push(Math.min(1, Math.hypot(rT / d, iT / d)));
+    S.push(Math.min(1, Math.hypot(rS / d, iS / d)));
+  }
+  return { T, S };
+}
+
 /* ---------- 几何 MTF（由点列直接算，无需 OPD/离焦/FFT 网格）----------
    几何 PSF 视作等权重光线落点 (1/N)Σ δ(x−x_k, y−y_k)；
    沿某方向的 1D OTF = (1/N)Σ e^{−i2π·ν·coord}，MTF = |OTF| ∈ [0,1]。

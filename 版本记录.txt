@@ -4,6 +4,21 @@
 ; 每次迭代在本文件登记: 版本号 / 日期 / 新增与修复 / 灰度(自测)
 
 --------------------------------------------------------------------
+v1.2.3  [2026-09-11]  多波长离焦（复色 through-focus MTF）
+  新增(mtf.js):
+    - throughFocusMultiColor(pupils, nu, dzUmList, fno): 对每个轴向离焦 dz，逐 λ 由
+      W20=Δz/(8F#²λ) 加离焦相位 → OTF → 在 ν 处取复值 → Σw·OTF(共用参考球心) → |·|。
+  变更(main.js):
+    - updateMtfFocus 支持「波长」选择(全部/主/单)：逐 λ traceWavefront(共用 refX/refY)
+      → throughFocusMultiColor；标题/脚注显示「复色 · N 波长」。
+  灰度(自测, node 直调 mtf.js):
+    - 单波长 throughFocusMultiColor ≡ throughFocusFromPupil (差 0.0)；
+    - 双份相同波长 ≡ 单波长 (差 0.0)；复色 |Σw·OTF| ≤ 单色最大(三角不等式) OK。
+    - mtf.js/main.js node --check 通过；?v= 升至 1.2.3。
+  说明:
+    - 复色按波长权重(UI 权重)复数加权；衍射极限参考用主波长理想圆孔。
+
+--------------------------------------------------------------------
 v1.1.0  [2026-09-11]  P0b：MTF 离焦曲线（through-focus）上线
   新增(mtf.js):
     - throughFocusFromPupil(re,im,N,R,nuC,nu,w20List): 在真实波前瞳函数上叠加离焦相位

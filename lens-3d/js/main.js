@@ -6,7 +6,7 @@ import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, set
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile } from './import.js?v=0.8.4';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=0.8.4';
-import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, throughFocusFromPupil, throughFocusMTF, defocusWaves } from './mtf.js?v=1.1.0';
+import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.2.3';
 
 const STATUS = document.querySelector('.status');
 const renderFo = document.getElementById('fo');
@@ -780,27 +780,38 @@ function updateMtfFocus() {
   const fsel = mtfField?.value || 'all';
   const fields = fsel === 'all' ? baseList : [+fsel];
   const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
-  const lamUm = (pri.nm || 587.56) / 1000;
+  const wsel = mtfWavelength?.value || 'all';
+  const wlList = wsel === 'all' ? wlAll : (wsel === 'primary' ? [pri] : wlAll.filter(w => String(w.nm) === wsel));
+  const lamPri = (pri.nm || 587.56) / 1000;
   const fno = (lastTrace.fo && isFinite(lastTrace.fo.fno)) ? lastTrace.fo.fno : (sys.fno || 0);
   const unit = mtfFocusUnit?.value === 'mm' ? 'mm' : 'um';
   const toUm = unit === 'mm' ? 1000 : 1;                           // 1 显示单位 = toUm µm
-  if (!(fno > 0)) { renderMtfFocusSVG(mtfMain, { dz: [], sets: [], ref: null, nuEval: 0, nm: pri.nm || 587.56, fno: 0, nuC: 0, mode, unit, toUm }); return; }
-  const nuC = 1 / (lamUm * fno);                                   // 衍射截止 lp/mm
+  const wlLabel = wsel === 'all' ? `复色 · ${wlList.length} 波长` : `@${Math.round((wlList[0] && wlList[0].nm) || pri.nm || 587.56)}nm`;
+  if (!(fno > 0)) { renderMtfFocusSVG(mtfMain, { dz: [], sets: [], ref: null, nuEval: 0, nm: pri.nm || 587.56, fno: 0, nuC: 0, mode, unit, toUm, wlLabel }); return; }
+  const nuC = 1 / (lamPri * fno);                                  // 衍射截止(主波长) lp/mm
   const nuEval = Math.max(1, Math.min(1000, parseFloat(mtfNu?.value) || 45));
   const rangeIn = parseFloat(mtfFocusRange?.value);
-  const rangeUm = (isFinite(rangeIn) && rangeIn > 0) ? rangeIn * toUm : (4 * lamUm * fno * fno);  // 轴向 ±µm
+  const rangeUm = (isFinite(rangeIn) && rangeIn > 0) ? rangeIn * toUm : (4 * lamPri * fno * fno);  // 轴向 ±µm
   const NSTEP = 41;
   const dz = []; for (let k = 0; k < NSTEP; k++) dz.push(-rangeUm + 2 * rangeUm * k / (NSTEP - 1));
-  const w20 = dz.map(z => defocusWaves(z / 1000, fno, lamUm));     // 波差(波)
   const sets = fields.map(fv => {
-    const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 64 });
-    if (!wv.ok) return { field: +fv, T: new Array(NSTEP).fill(0), S: new Array(NSTEP).fill(0), ok: false };
-    const { T, S } = throughFocusFromPupil(wv.re, wv.im, wv.N, wv.R, wv.nuC, nuEval, w20);
+    const pupils = [];
+    let refX, refY;                                                // 复色：各波长共用同一 OPD 参考球心
+    for (const w of wlList) {
+      const lamUm = (w.nm || 587.56) / 1000;
+      const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 64, refX, refY });
+      if (!wv.ok) continue;
+      if (refX == null) { refX = wv.cx; refY = wv.cy; }
+      pupils.push({ re: wv.re, im: wv.im, N: wv.N, R: wv.R, nuC: wv.nuC, weight: w.weight ?? 1, lambdaUm: lamUm });
+    }
+    if (!pupils.length) return { field: +fv, T: new Array(NSTEP).fill(0), S: new Array(NSTEP).fill(0), ok: false };
+    const { T, S } = throughFocusMultiColor(pupils, nuEval, dz, fno);
     return { field: +fv, T, S, ok: true };
   });
-  const s0 = nuC > 0 ? Math.min(0.999, nuEval / nuC) : 0;          // 衍射极限参考(理想圆孔·同离焦)
-  const ref = s0 > 0 ? throughFocusMTF(128, 31, s0, w20) : null;
-  renderMtfFocusSVG(mtfMain, { dz, sets, ref, nuEval, nm: pri.nm || 587.56, fno, nuC, mode, unit, toUm });
+  const s0 = nuC > 0 ? Math.min(0.999, nuEval / nuC) : 0;          // 衍射极限参考(主波长·理想圆孔·同离焦)
+  const w20pri = dz.map(z => defocusWaves(z / 1000, fno, lamPri));
+  const ref = s0 > 0 ? throughFocusMTF(128, 31, s0, w20pri) : null;
+  renderMtfFocusSVG(mtfMain, { dz, sets, ref, nuEval, nm: pri.nm || 587.56, fno, nuC, mode, unit, toUm, wlLabel });
 }
 function renderMtfFocusSVG(el, d) {
   const W = 660, H = 380, ml = 56, mr = 24, mt = 40, mb = 92;
@@ -812,7 +823,7 @@ function renderMtfFocusSVG(el, d) {
   const fmt = v => { const a = Math.abs(v); return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : v.toFixed(3); };
   const g = [];
   g.push(`<text x="${ml - 44}" y="20" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">MTF 离焦曲线（波前 · 衍射 FFT） · 面： 像面</text>`);
-  g.push(`<text x="${W - mr}" y="20" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">@${Math.round(d.nm)}nm · F#${d.fno > 0 ? d.fno.toFixed(2) : '—'} · 评估 ${Math.round(d.nuEval)} lp/mm</text>`);
+  g.push(`<text x="${W - mr}" y="20" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">${d.wlLabel || ('@' + Math.round(d.nm) + 'nm')} · F#${d.fno > 0 ? d.fno.toFixed(2) : '—'} · 评估 ${Math.round(d.nuEval)} lp/mm</text>`);
   for (let k = 0; k <= 5; k++) {
     const m = k / 5, y = ys(m);
     g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
@@ -854,7 +865,7 @@ function renderMtfFocusSVG(el, d) {
     lx += 20 + txt.length * 6.4 + 14;
     if (lx > W - mr - 140 && i < d.sets.length - 1) { lx = ml; ly += 16; }
   }
-  g.push(`<text x="${ml}" y="${H - 8}" fill="#6D7B86" font-size="10" font-family="ui-monospace,monospace">实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(理想圆孔·同离焦) · 绿虚线=最佳焦面(各视场T之和最大) · 单色(主波长)</text>`);
+  g.push(`<text x="${ml}" y="${H - 8}" fill="#6D7B86" font-size="10" font-family="ui-monospace,monospace">实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(理想圆孔·同离焦) · 绿虚线=最佳焦面(各视场T之和最大) · ${d.wlLabel && d.wlLabel.indexOf('复色') >= 0 ? '复色(按波长权重复数加权)' : '单色(主波长)'}</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }
