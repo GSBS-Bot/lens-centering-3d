@@ -224,6 +224,7 @@ select:hover { border-color: var(--accent); }
 .hud .status.ok { color: var(--ok); }
 .hud .fo { color: var(--ok); font-size: 11px; margin-top: 4px; display: none; font-variant-numeric: tabular-nums; }
 .hud .fo.show { display: block; }
+.hud.hidden, .vertReadout.hidden { display: none; }
 .vertReadout { position: absolute; top: 12px; right: 12px; z-index: 5; min-width: 150px;
   padding: 8px 11px; background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius);
   font-size: 11px; line-height: 1.7; color: var(--fg); pointer-events: none; user-select: none;

@@ -1038,6 +1038,18 @@ document.getElementById('viewSeg').addEventListener('click', e => {
   const b = e.target.closest('.vbtn');
   if (b) fitCamera(b.dataset.view);
 });
+// 左上信息窗 / 右上坐标窗 显示切换
+const hudEl = document.getElementById('hud');
+const hudToggle = document.getElementById('hudToggle');
+if (hudToggle && hudEl) hudToggle.addEventListener('click', () => {
+  const hidden = hudEl.classList.toggle('hidden');
+  hudToggle.classList.toggle('active', !hidden);
+});
+const readoutToggle = document.getElementById('readoutToggle');
+if (readoutToggle && vertEl) readoutToggle.addEventListener('click', () => {
+  const hidden = vertEl.classList.toggle('hidden');
+  readoutToggle.classList.toggle('active', !hidden);
+});
 
 // M2a-2：视场/光线数控件 -> 重新追迹（rebuildScene 内部会顺带刷新当前激活的叠加面板）
 const refreshField = () => { rebuildScene(true); };
