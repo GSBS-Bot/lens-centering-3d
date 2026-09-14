@@ -1026,9 +1026,11 @@ if (refreshBtn) refreshBtn.addEventListener('click', () => { sys = ldm.sys; rebu
 // ---------- 控件 ----------
 // 顶部动作
 function loadCurrent() {
-  const make = DEMO_LENSES[demoSel.value] || demoSingleElement;
-  freshSys(make());
-  syncAll(0);
+  const file = demoSel.value;
+  if (!file) return;
+  loadZmxFile(file, false)
+    .then(s => setStatus(`载入 «${s.name}» · 面 ${s.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true))
+    .catch(e => fail(e));
 }
 document.getElementById('newDemo').addEventListener('click', loadCurrent);
 demoSel.addEventListener('change', loadCurrent);
@@ -1152,24 +1154,28 @@ window.addEventListener('error', ev => fail(ev.error || ev.message));
 window.addEventListener('unhandledrejection', ev => fail(ev.reason));
 
 // ---------- 启动 ----------
-// 默认显示本地示例 Zemax 文件（UTF-16LE）；失败回退到内置单片双凸。
-const DEFAULT_ZMX = { dir: '测试zemax文件', file: 'Advanced_SC_doubleGauss_final.zmx' };
-async function loadDefault() {
-  // 相对路径(../)而非绝对(/), 兼容本地服务与 GitHub Pages 子路径(如 /<repo>/lens-3d/)部署。
+// 从 测试zemax文件/ 载入 .zmx（相对路径，兼容本地服务与 Pages 子路径）
+const ZMX_DIR = '测试zemax文件';
+const DEFAULT_ZMX_FILE = 'Advanced_SC_doubleGauss_final.zmx';
+async function loadZmxFile(file, resetView = true) {
   // 本地: /lens-3d/ -> ../测试zemax文件/... = /测试zemax文件/... ; Pages: /repo/lens-3d/ -> /repo/测试zemax文件/...
-  const url = '../' + encodeURIComponent(DEFAULT_ZMX.dir) + '/' + encodeURIComponent(DEFAULT_ZMX.file);
+  const url = '../' + encodeURIComponent(ZMX_DIR) + '/' + encodeURIComponent(file);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const ns = importFile(file, lensTextFromBuffer(await r.arrayBuffer()));
+  if (!ns) throw new Error('解析失败');
+  freshSys(ns);
+  applyPanelFromSys();
+  syncAll(0);
+  if (pendingAutoVig) runAutoVignette();
+  resize();
+  if (resetView) fitCamera('2d');   // 默认显示 2D 光路
+  return sys;
+}
+async function loadDefault() {
   try {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const ns = importFile(DEFAULT_ZMX.file, lensTextFromBuffer(await r.arrayBuffer()));
-    if (!ns) throw new Error('解析失败');
-    freshSys(ns);
-    applyPanelFromSys();
-    syncAll(0);
-    if (pendingAutoVig) runAutoVignette();
-    resize();
-    fitCamera('2d');   // 默认显示 2D 光路
-    setStatus(`默认载入 «${sys.name}» · 面 ${sys.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
+    const s = await loadZmxFile(DEFAULT_ZMX_FILE, true);
+    setStatus(`默认载入 «${s.name}» · 面 ${s.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
   } catch (e) {
     console.error('默认文件载入失败，回退 demo', e);
     freshSys(demoSingleElement());
