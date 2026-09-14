@@ -699,10 +699,10 @@ function updateMtf() {
     for (const w of wlList) {
       const lam = (w.nm || 587.56) / 1000;
       if (algo === 'diff') {
-        const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid: 128, refX, refY, vigCoef: vigs ? vigs[fi] : null });
+        const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid: 64, refX, refY, vigCoef: vigs ? vigs[fi] : null });
         if (!wv.ok) continue;
         if (refX == null) { refX = wv.cx; refY = wv.cy; }
-        items.push({ kind: 'diff', T: otfFromOpd(wv.opd, wv.mask, wv.N, wv.R, wv.nuC, lam, nus, 'T'), S: otfFromOpd(wv.opd, wv.mask, wv.N, wv.R, wv.nuC, lam, nus, 'S'), weight: w.weight ?? 1 });
+        items.push({ kind: 'diff', otf: otfFromPupil(wv.re, wv.im, wv.N), N: wv.N, R: wv.R, nuC: wv.nuC, weight: w.weight ?? 1 });
       } else {
         const pts = (traceSpot(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid, vigCoef: vigs ? vigs[fi] : null }).points) || [];
         const wv = w.weight ?? 1;
@@ -717,7 +717,10 @@ function updateMtf() {
       for (const it of items) {
         if (it.kind === 'diff') {
           const w = (it.weight || 1) / sw;
-          rT += w * it.T.re[q]; iT += w * it.T.im[q]; rS += w * it.S.re[q]; iS += w * it.S.im[q];
+          const s = it.nuC > 0 ? nus[q] / it.nuC : (nus[q] > 0 ? 1 : 0);
+          const cT = sampleOtfComplex(it.otf, it.N, it.R, s, 'T');
+          const cS = sampleOtfComplex(it.otf, it.N, it.R, s, 'S');
+          rT += w * cT.re; iT += w * cT.im; rS += w * cS.re; iS += w * cS.im;
         } else {   // geoAll：所有波长落点按权重做一次加权复 OTF（与友站一致）
           let srT = 0, siT = 0, srS = 0, siS = 0, sw2 = 0;
           for (const p of it.pts) {
@@ -818,25 +821,13 @@ function updateMtfFocus() {
     let refX, refY;                                                // 复色：各波长共用同一 OPD 参考球心
     for (const w of wlList) {
       const lamUm = (w.nm || 587.56) / 1000;
-      const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 128, refX, refY, vigCoef: vigs ? vigs[fi] : null });
+      const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 64, refX, refY, vigCoef: vigs ? vigs[fi] : null });
       if (!wv.ok) continue;
       if (refX == null) { refX = wv.cx; refY = wv.cy; }
-      pupils.push({ wv, weight: w.weight ?? 1, lambdaUm: lamUm });
+      pupils.push({ re: wv.re, im: wv.im, N: wv.N, R: wv.R, nuC: wv.nuC, weight: w.weight ?? 1, lambdaUm: lamUm });
     }
     if (!pupils.length) return { field: +fv, T: new Array(NSTEP).fill(0), S: new Array(NSTEP).fill(0), ok: false };
-    const T = [], S = [];
-    for (const z of dz) {
-      let rT = 0, iT = 0, rS = 0, iS = 0, sw = 0;
-      for (const p of pupils) {
-        const w20 = defocusWaves(z / 1000, fno, p.lambdaUm);
-        const oT = otfFromOpd(p.wv.opd, p.wv.mask, p.wv.N, p.wv.R, p.wv.nuC, p.lambdaUm, [nuEval], 'T', w20);
-        const oS = otfFromOpd(p.wv.opd, p.wv.mask, p.wv.N, p.wv.R, p.wv.nuC, p.lambdaUm, [nuEval], 'S', w20);
-        const w = p.weight; sw += w;
-        rT += w * oT.re[0]; iT += w * oT.im[0]; rS += w * oS.re[0]; iS += w * oS.im[0];
-      }
-      const d = sw || 1;
-      T.push(Math.min(1, Math.hypot(rT / d, iT / d))); S.push(Math.min(1, Math.hypot(rS / d, iS / d)));
-    }
+    const { T, S } = throughFocusMultiColor(pupils, nuEval, dz, fno);
     return { field: +fv, T, S, ok: true };
   });
   const s0 = nuC > 0 ? Math.min(0.999, nuEval / nuC) : 0;          // 衍射极限参考(主波长·理想圆孔·同离焦)
