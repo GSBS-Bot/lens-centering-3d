@@ -42,7 +42,7 @@ const mtfGrid = document.getElementById('mtfGrid');
 const mtfNu = document.getElementById('mtfNu');
 const mtfWavelength = document.getElementById('mtfWavelength');
 const mtfMode = document.getElementById('mtfMode');
-const mtfFocusNu = document.getElementById('mtfFocusNu');
+const mtfNuLabel = document.getElementById('mtfNuLabel');
 const mtfFocusRange = document.getElementById('mtfFocusRange');
 const vigEl = document.getElementById('fieldVig');
 
@@ -653,6 +653,7 @@ function mtfHex(n) { return '#' + adaptHexNum(n).toString(16).padStart(6, '0'); 
 function updateMtf() {
   if (!mtfMain) return;
   if ((mtfMode?.value || 'freq') === 'focus') return updateMtfFocus();
+  if (mtfNuLabel) mtfNuLabel.textContent = '最高频率';
   const nGrid = Math.max(7, Math.min(41, parseInt(mtfGrid?.value, 10) || 21)) | 0;
   const nuMax = Math.max(10, Math.min(1000, parseFloat(mtfNu?.value) || 100));
   const mode = fmodeEl?.value || 'angle';
@@ -764,6 +765,7 @@ function renderMtfSVG(el, d) {
 
 // ---- P0b：MTF 离焦曲线（真实波前瞳函数 + 离焦相位扫描）----
 function updateMtfFocus() {
+  if (mtfNuLabel) mtfNuLabel.textContent = '评估频率';
   const mode = fmodeEl?.value || 'angle';
   const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
   const fsel = mtfField?.value || 'all';
@@ -773,7 +775,7 @@ function updateMtfFocus() {
   const fno = (lastTrace.fo && isFinite(lastTrace.fo.fno)) ? lastTrace.fo.fno : (sys.fno || 0);
   if (!(fno > 0)) { renderMtfFocusSVG(mtfMain, { dz: [], sets: [], ref: null, nuEval: 0, nm: pri.nm || 587.56, fno: 0, nuC: 0, mode }); return; }
   const nuC = 1 / (lamUm * fno);                                   // 衍射截止 lp/mm
-  const nuEval = Math.max(1, Math.min(1000, parseFloat(mtfFocusNu?.value) || 30));
+  const nuEval = Math.max(1, Math.min(1000, parseFloat(mtfNu?.value) || 100));
   const range = Math.max(1, parseFloat(mtfFocusRange?.value) || (4 * lamUm * fno * fno));  // 轴向 ±µm
   const NSTEP = 41;
   const dz = []; for (let k = 0; k < NSTEP; k++) dz.push(-range + 2 * range * k / (NSTEP - 1));
@@ -1037,7 +1039,7 @@ for (const el of [illumGrid, illumN, illumWavelength]) {
   if (el) el.addEventListener('input', () => updateIllum());
   if (el) el.addEventListener('change', () => updateIllum());
 }
-for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength, mtfMode, mtfFocusNu, mtfFocusRange]) {
+for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength, mtfMode, mtfFocusRange]) {
   if (el) el.addEventListener('input', () => updateMtf());
   if (el) el.addEventListener('change', () => updateMtf());
 }

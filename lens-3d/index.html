@@ -105,11 +105,10 @@
             <div class="spot-ctrl">
               <label title="MTF 算法">算法 <select id="mtfAlgo"><option value="geo">几何</option><option value="diff">波前(衍射)</option></select></label>
               <label title="曲线类型：频率曲线 / 离焦曲线(through-focus)">模式 <select id="mtfMode"><option value="freq">频率曲线</option><option value="focus">离焦曲线</option></select></label>
-              <label title="离焦曲线：评估的空间频率">频率 <input id="mtfFocusNu" type="number" value="30" min="1" max="1000" step="1"> lp/mm</label>
               <label title="离焦曲线：轴向离焦范围(±µm)，留空自动">范围 <input id="mtfFocusRange" type="number" min="1" step="5" placeholder="自动"> µm</label>
               <label title="显示哪些视场">场 <select id="mtfField"><option value="all">全部</option></select></label>
               <label title="入瞳采样网格密度">网格 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
-              <label title="横轴最高空间频率">最高频率 <input id="mtfNu" type="number" value="100" min="10" max="1000" step="10"> lp/mm</label>
+              <label title="频率曲线的横轴上限 / 离焦曲线的评估频率"><span id="mtfNuLabel">最高频率</span> <input id="mtfNu" type="number" value="100" min="1" max="1000" step="5"> lp/mm</label>
               <label title="用哪个/哪些波长（全部=复色）">波长 <select id="mtfWavelength"><option value="all">全部</option><option value="primary">主波长</option></select></label>
             </div>
             <svg id="mtfMain"></svg>
@@ -143,6 +142,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.1.1"></script>
+  <script type="module" src="js/main.js?v=1.1.2"></script>
 </body>
 </html>
