@@ -257,7 +257,7 @@ export function renderLayoutSVG(svg, sys, surfaceList, opts = {}) {
     const bodyR = Math.max(s.mSemi ?? s.semi ?? 10, back.mSemi ?? back.semi ?? 10); // 机械边缘半径
     const fp = profile(s, surfaceList[i].z, s.semi ?? bodyR, bodyR);
     const bp = profile(back, surfaceList[i + 1].z, back.semi ?? bodyR, bodyR);
-    elements.push({ front: fp, back: bp });
+    elements.push({ front: fp, back: bp, fi: i, bi: i + 1 });
     acc(fp); acc(bp);
   }
 
@@ -300,6 +300,10 @@ export function renderLayoutSVG(svg, sys, surfaceList, opts = {}) {
     const zs = st.z;
     g.push(`<line x1="${X(zs)}" y1="${Y(hs)}" x2="${X(zs)}" y2="${Y(topH)}" stroke="${INK}" stroke-width="2"/>`);
     g.push(`<line x1="${X(zs)}" y1="${Y(-hs)}" x2="${X(zs)}" y2="${Y(-topH)}" stroke="${INK}" stroke-width="2"/>`);
+    if (opts.highlightIdx != null && sys.stopIndex === opts.highlightIdx) {
+      g.push(`<line x1="${X(zs)}" y1="${Y(hs)}" x2="${X(zs)}" y2="${Y(topH)}" stroke="#ffd633" stroke-width="3"/>`);
+      g.push(`<line x1="${X(zs)}" y1="${Y(-hs)}" x2="${X(zs)}" y2="${Y(-topH)}" stroke="#ffd633" stroke-width="3"/>`);
+    }
     g.push(`<text x="${X(zs)}" y="${Y(topH) - 5}" fill="${INK2}" font-size="10.5" text-anchor="middle" font-family="ui-monospace, monospace">光阑</text>`);
   }
   // 像面刻线 + 标注：高度跟随视场/像高(取各视场主光线落点最大 |y|)
@@ -329,6 +333,20 @@ export function renderLayoutSVG(svg, sys, surfaceList, opts = {}) {
       const d = r.pts.map((p, j) => (j ? 'L' : 'M') + X(p[2]).toFixed(2) + ' ' + Y(p[1]).toFixed(2)).join(' ');
       g.push(`<path d="${d}" fill="none" stroke="${c}" stroke-width="${wid}" opacity="${alpha}"${dash}/>`);
     });
+  }
+
+  // 选中面高亮（点击面表时在 2D 图上也体现）：把该面轮廓再描一遍
+  const hlIdx = opts.highlightIdx;
+  if (hlIdx != null) {
+    const drawHl = (pts) => {
+      if (!pts || pts.length < 2) return;
+      const dd = 'M' + pts.map(p => `${X(p[0]).toFixed(2)} ${Y(p[1]).toFixed(2)}`).join(' L');
+      g.push(`<path d="${dd}" fill="none" stroke="#ffd633" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" opacity=".95"/>`);
+    };
+    for (const e of elements) {
+      if (hlIdx === e.fi) drawHl(e.front);
+      if (hlIdx === e.bi) drawHl(e.back);
+    }
   }
 
   g.push('</g>');

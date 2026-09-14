@@ -2,7 +2,7 @@
 import * as THREE from '../vendor/three/three.module.js?v=0.8.4';
 import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
 import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
-import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.0.1';
+import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile } from './import.js?v=0.8.4';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=0.8.4';
@@ -164,7 +164,7 @@ const VIEW_PRESETS = {
   xz:  { dir: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, -1) }, // 侧面：沿 Y 看（X-Z 平面）
 };
 
-let viewMode = 'iso';
+let viewMode = '2d';
 function setActiveView(mode) {
   viewMode = mode;
   document.querySelectorAll('#viewSeg .vbtn').forEach(b =>
@@ -222,12 +222,14 @@ function layoutApply() {
   const r = layout2dEl.querySelector('#lgRoot');
   if (r) r.setAttribute('transform', `translate(${layout.tx} ${layout.ty}) scale(${layout.scale})`);
 }
+let selectedSurface = null;   // 当前选中的面（供 2D 高亮）
 function renderLayout2D() {
   if (!surfaceList || !surfaceList.length) return;   // 系统尚未构建
   layout.scale = 1; layout.tx = 0; layout.ty = 0;   // 每次重建回到自适应
   renderLayoutSVG(layout2dEl, sys, surfaceList, {
     rays: collateFieldRays(lastTrace.fields),
     imageMarks: lastTrace.fields.map(fd => ({ y: fd.chief?.imageY, field: fd.field, mode: fd.mode })),
+    highlightIdx: selectedSurface,
   });
   layoutApply();
   if (layoutBadgeEl) layoutBadgeEl.textContent = layoutBadge(sys);
@@ -910,10 +912,13 @@ function updateVertReadout(i) {
 
 function highlightByIndex(i) {
   if (highlightObj) { scene.remove(highlightObj); highlightObj = null; }
-  if (i == null || !surfaceList.length) return;
-  highlightObj = buildSurfaceMarker(sys, surfaceList, i);
-  scene.add(highlightObj);
-  updateVertReadout(i);
+  selectedSurface = (i == null) ? null : i;
+  if (i != null && surfaceList.length) {
+    highlightObj = buildSurfaceMarker(sys, surfaceList, i);
+    scene.add(highlightObj);
+    updateVertReadout(i);
+  }
+  if (viewMode === '2d') renderLayout2D();   // 2D 图同步高亮
 }
 function clearHighlight() {
   if (highlightObj) { scene.remove(highlightObj); highlightObj = null; }
@@ -1151,6 +1156,7 @@ async function loadDefault() {
     syncAll(0);
     if (pendingAutoVig) runAutoVignette();
     resize();
+    fitCamera('2d');   // 默认显示 2D 光路
     setStatus(`默认载入 «${sys.name}» · 面 ${sys.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
   } catch (e) {
     console.error('默认文件载入失败，回退 demo', e);
@@ -1158,6 +1164,7 @@ async function loadDefault() {
     applyPanelFromSys();
     syncAll(0);
     resize();
+    fitCamera('2d');
   }
 }
 loadDefault();
