@@ -613,6 +613,8 @@ export function traceSpot(sys, surfaceList, cfg = {}) {
   const theta = c._theta ?? 0;
   const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
   const points = [];
+  const vc = cfg.vigCoef || null;
+  const inWin = (px, py) => !vc || (px >= vc.xLo && px <= vc.xHi && py >= vc.yLo && py <= vc.yHi);
   const buildRay = (px, py) => {
     if (finite) {
       const dx = px * epd / 2, dy = py * epd / 2 - param, dz = zEP - zObj;
@@ -624,6 +626,7 @@ export function traceSpot(sys, surfaceList, cfg = {}) {
   };
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     const px = -1 + 2 * i / (N - 1), py = -1 + 2 * j / (N - 1);
+    if (!inWin(px, py)) continue;                       // 渐晕窗口外不采样
     const rb = buildRay(px, py);
     const tr = traceRay3(sys, surfaceList, rb.P0, rb.D0, lam, false);
     if (tr.ok && tr.imageX != null && tr.imageY != null) points.push([tr.imageX, tr.imageY]);
@@ -649,7 +652,10 @@ export function traceIllumination(sys, surfaceList, cfg = {}) {
   if (!S.length) return { mode, fields: list, items, ref: 1 };
   const finiteSys = isFinite(sys.objectDist) && sys.objectDist > 0 && sys.objectDist < 1e7;
   const efl = Math.abs((firstOrder(sys, surfaceList, lam) || {}).efl) || 1;
-  for (const fv of list) {
+  const vigCoefs = cfg.vigCoefs || [];
+  for (let fi = 0; fi < list.length; fi++) {
+    const fv = list[fi];
+    const vc = vigCoefs[fi] || null;
     // 名义物方半视场角(°): 角度=场值; 像高=atan(|h|/EFL)
     let thetaDeg = (mode === 'angle') ? +fv : Math.atan2(Math.abs(+fv), efl) * 180 / Math.PI;
     const b = traceFieldBundle(sys, surfaceList, {
@@ -668,6 +674,7 @@ export function traceIllumination(sys, surfaceList, cfg = {}) {
       const px = -1 + 2 * i / (N - 1), py = -1 + 2 * j / (N - 1);
       if (px * px + py * py > 1.0000001) continue;              // 圆瞳内(面积均匀)
       nTot++;
+      if (vc && (px < vc.xLo || px > vc.xHi || py < vc.yLo || py > vc.yHi)) continue;  // 渐晕窗口外→未通过
       let P0, D0;
       if (finite) {
         const dx = px * epd / 2, dy = py * epd / 2 - param, dz = zEP - zObj;
@@ -735,6 +742,8 @@ export function traceWavefront(sys, surfaceList, cfg = {}) {
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const u = (i - o) / R, v = (j - o) / R;
     if (u * u + v * v > 1.0000001) continue;          // 圆瞳内
+    const vc = cfg.vigCoef;
+    if (vc && (u < vc.xLo || u > vc.xHi || v < vc.yLo || v > vc.yHi)) continue;   // 渐晕窗口外
     let P0, D0;
     if (finite) {
       const dx = u * epd / 2, dy = v * epd / 2 - param, dz = zEP - zObj;

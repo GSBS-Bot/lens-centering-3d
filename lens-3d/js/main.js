@@ -4,8 +4,8 @@ import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
 import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
-import { importFile, importFriendJson } from './import.js?v=1.3.0';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=0.8.4';
+import { importFile, importFriendJson } from './import.js?v=1.3.1';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=1.3.1';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.2.3';
 
 const STATUS = document.querySelector('.status');
@@ -325,6 +325,17 @@ function syncWave(newSys) {
 function parseFields(v) {
   return String(v || '').split(/[,;\s]+/).map(s => parseFloat(s)).filter(n => isFinite(n));
 }
+// 把选定视场映射到 sys.vigCoefs（按视场值就近匹配），供点列/照度/MTF 裁剪光瞳
+function vigForFields(fields) {
+  const all = sys.vigCoefs;
+  if (!Array.isArray(all) || !all.length) return null;
+  const fl = sys.fields || [];
+  return fields.map(fv => {
+    let bi = -1, bd = 1e9;
+    for (let i = 0; i < fl.length; i++) { const d = Math.abs((fl[i] ?? 0) - fv); if (d < bd) { bd = d; bi = i; } }
+    return bi >= 0 ? (all[bi] || null) : null;
+  });
+}
 function updateRays() {
   rayGroup.clear();
   let fields = [], fo = null, EP = null, vig = null;
@@ -485,9 +496,10 @@ function updateSpot() {
   const fields = fsel === 'all' ? (parseFields(fvalsEl?.value).length ? parseFields(fvalsEl.value) : [0]) : [+fsel];
   const spots = [];
   let gwin = 1e-3;
-  fields.forEach(fv => {
+  const vigs = vigForFields(fields);
+  fields.forEach((fv, fi) => {
     const groups = wlList.map(w => {
-      const s = traceSpot(sys, surfaceList, { mode: fmodeEl?.value || 'angle', field: fv, lambdaUm: w.nm / 1000, nGrid });
+      const s = traceSpot(sys, surfaceList, { mode: fmodeEl?.value || 'angle', field: fv, lambdaUm: w.nm / 1000, nGrid, vigCoef: vigs ? vigs[fi] : null });
       return { nm: w.nm, weight: w.weight, color: w.color || '#ffb300', points: s.points };
     });
     // 质心 / RMS / GEO：按波长权重加权（权重全为 0 时退化为等权）
@@ -589,7 +601,7 @@ function updateIllum() {
   const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
   const wsel = illumWavelength?.value || 'primary';
   const w = (wsel === 'primary') ? pri : (wlAll.find(x => String(x.nm) === wsel) || pri);
-  const res = traceIllumination(sys, surfaceList, { mode, fields, nGrid, lambdaUm: (w.nm || 587.56) / 1000 });
+  const res = traceIllumination(sys, surfaceList, { mode, fields, nGrid, lambdaUm: (w.nm || 587.56) / 1000, vigCoefs: vigForFields(fields) });
   renderIllumSVG(illumMain, res, baseList, mode, w.nm || 587.56);
 }
 function renderIllumSVG(el, res, designFields, mode, nm) {
@@ -679,18 +691,19 @@ function updateMtf() {
   const nuC = fno > 0 ? 1 / ((nmPri / 1e6) * fno) : 0;          // 衍射截止(主波长) lp/mm
   const NF = 61; const nus = []; for (let i = 0; i < NF; i++) nus.push(nuMax * i / (NF - 1));
   const nSets = wlList.length;
-  const sets = fields.map(fv => {
+  const vigs = vigForFields(fields);
+  const sets = fields.map((fv, fi) => {
     const items = [];
     let refX, refY;                                   // 复色：各波长共用同一 OPD 参考球心(否则相对相位乱)
     for (const w of wlList) {
       const lam = (w.nm || 587.56) / 1000;
       if (algo === 'diff') {
-        const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid: 64, refX, refY });
+        const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid: 64, refX, refY, vigCoef: vigs ? vigs[fi] : null });
         if (!wv.ok) continue;
         if (refX == null) { refX = wv.cx; refY = wv.cy; }
         items.push({ kind: 'diff', otf: otfFromPupil(wv.re, wv.im, wv.N), N: wv.N, R: wv.R, nuC: wv.nuC, weight: w.weight ?? 1 });
       } else {
-        const pts = (traceSpot(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid }).points) || [];
+        const pts = (traceSpot(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid, vigCoef: vigs ? vigs[fi] : null }).points) || [];
         items.push({ kind: 'geo', pts, weight: w.weight ?? 1 });
       }
     }
@@ -794,12 +807,13 @@ function updateMtfFocus() {
   const rangeUm = (isFinite(rangeIn) && rangeIn > 0) ? rangeIn * toUm : (4 * lamPri * fno * fno);  // 轴向 ±µm
   const NSTEP = 41;
   const dz = []; for (let k = 0; k < NSTEP; k++) dz.push(-rangeUm + 2 * rangeUm * k / (NSTEP - 1));
-  const sets = fields.map(fv => {
+  const vigs = vigForFields(fields);
+  const sets = fields.map((fv, fi) => {
     const pupils = [];
     let refX, refY;                                                // 复色：各波长共用同一 OPD 参考球心
     for (const w of wlList) {
       const lamUm = (w.nm || 587.56) / 1000;
-      const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 64, refX, refY });
+      const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 64, refX, refY, vigCoef: vigs ? vigs[fi] : null });
       if (!wv.ok) continue;
       if (refX == null) { refX = wv.cx; refY = wv.cy; }
       pupils.push({ re: wv.re, im: wv.im, N: wv.N, R: wv.R, nuC: wv.nuC, weight: w.weight ?? 1, lambdaUm: lamUm });

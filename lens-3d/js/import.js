@@ -278,5 +278,15 @@ export function importFriendJson(obj) {
     .map(w => ({ nm: parseFloat(w[0]), weight: parseFloat(w[1]) || 1, color: w[2] || '' }))
     .filter(w => isFinite(w.nm));
   sys.primary = isFinite(obj.pri) ? obj.pri : 0;
+  // 友站逐视场渐晕系数：上边缘=1−VUY、下边缘=−1+VLY（X 同理）→ 我们的 vigCoefs
+  const cfg0 = (Array.isArray(obj.cfgs) && obj.cfgs[0]) || null;
+  const vig = cfg0 && cfg0.vig;
+  if (vig && Array.isArray(vig.vuy) && vig.vuy.length) {
+    const cl = v => Math.max(-1, Math.min(1, v));
+    sys.vigCoefs = vig.vuy.map((_, f) => ({
+      yHi: cl(1 - vig.vuy[f]), yLo: cl(vig.vly[f] - 1),
+      xHi: cl(1 - vig.vux[f]), xLo: cl(vig.vlx[f] - 1),
+    }));
+  }
   return sys;
 }
