@@ -767,13 +767,16 @@ export function traceWavefront(sys, surfaceList, cfg = {}) {
     const cc = solve3(M, Y); if (cc) coef = cc; else coef = [so[0], 0, 0];
   } else if (nHit) coef = [so[0], 0, 0];
   const lamMm = lam / 1000;
+  const opd = new Float64Array(N * N), mask = new Uint8Array(N * N);
   for (let k = 0; k < nHit; k++) {
     const w = so[k] - (coef[0] + coef[1] * su[k] + coef[2] * sv[k]);
+    const idx = sj[k] * N + si[k];
+    opd[idx] = w; mask[idx] = 1;
     const ph = 2 * Math.PI * w / lamMm;               // OPD(mm)/λ(mm)
-    re[sj[k] * N + si[k]] = Math.cos(ph); im[sj[k] * N + si[k]] = Math.sin(ph);
+    re[idx] = Math.cos(ph); im[idx] = Math.sin(ph);
   }
   const fno = (isFinite(sys.fno) && sys.fno > 0) ? sys.fno : ((firstOrder(sys, surfaceList, lam) || {}).fno || 0);
   const nuC = fno > 0 ? 1 / ((lam / 1000) * fno) : 0;   // 衍射截止 lp/mm
-  return { ok: nHit > 0, N, R, re, im, nuC, nHit, cx, cy, fno };
+  return { ok: nHit > 0, N, R, re, im, opd, mask, nuC, nHit, cx, cy, fno };
 }
 

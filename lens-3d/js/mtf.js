@@ -207,6 +207,46 @@ export function throughFocusMultiColor(pupils, nu, dzUmList, fno) {
   return { T, S };
 }
 
+/* ---------- 由 OPD 网格用「剪切相位差」法算复 OTF（对大幅离焦稳健）----------
+   OTF(ν) = (1/N_pupil)·Σ_{ρ∈瞳, ρ−s∈瞳} e^{i2π[W(ρ)−W(ρ−s)]/λ}，s=2ν/νC(归一到瞳半径)。
+   离焦在相位差里相消，故不受相位混叠影响（等价精确 OTF，但采样要求低）。
+   opd: Float64Array(N*N) OPD(mm)；mask: Uint8Array(N*N) 瞳内=1；
+   nuC: 截止(lp/mm)；lambdaUm: 波长；nus: 频率(lp/mm)；axis: 'T'(y)/'S'(x)；w20: 附加离焦(波)。
+   返回 { re, im }（长度 = nus.length）。 */
+export function otfFromOpd(opd, mask, N, R, nuC, lambdaUm, nus, axis = 'T', w20 = 0) {
+  const lamMm = lambdaUm / 1000, o = N >> 1, R2 = R * R;
+  const idxs = [];
+  for (let k = 0; k < N * N; k++) if (mask[k]) idxs.push(k);
+  const np = idxs.length || 1;
+  let W = opd;
+  if (w20) {
+    W = new Float64Array(N * N);
+    for (const k of idxs) { const i = k % N, j = (k - i) / N, dx = i - o, dy = j - o; W[k] = opd[k] + w20 * (dx * dx + dy * dy) / R2 * lamMm; }
+  }
+  const at = (fx, fy) => {
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    if (x0 < 0 || y0 < 0 || x0 + 1 >= N || y0 + 1 >= N) return null;
+    const tx = fx - x0, ty = fy - y0;
+    const k00 = y0 * N + x0, k10 = y0 * N + x0 + 1, k01 = (y0 + 1) * N + x0, k11 = (y0 + 1) * N + x0 + 1;
+    if (!mask[k00] || !mask[k10] || !mask[k01] || !mask[k11]) return null;
+    return W[k00] * (1 - tx) * (1 - ty) + W[k10] * tx * (1 - ty) + W[k01] * (1 - tx) * ty + W[k11] * tx * ty;
+  };
+  const re = new Float64Array(nus.length), im = new Float64Array(nus.length);
+  for (let q = 0; q < nus.length; q++) {
+    const s = nuC > 0 ? 2 * nus[q] / nuC * R : 0;
+    let sr = 0, si = 0;
+    for (const k of idxs) {
+      const i = k % N, j = (k - i) / N, w1 = W[k];
+      const w2 = axis === 'T' ? at(i, j - s) : at(i - s, j);
+      if (w2 == null) continue;
+      const ph = 2 * Math.PI * (w1 - w2) / lamMm;
+      sr += Math.cos(ph); si += Math.sin(ph);
+    }
+    re[q] = sr / np; im[q] = si / np;
+  }
+  return { re, im };
+}
+
 /* ---------- 几何 MTF（由点列直接算，无需 OPD/离焦/FFT 网格）----------
    几何 PSF 视作等权重光线落点 (1/N)Σ δ(x−x_k, y−y_k)；
    沿某方向的 1D OTF = (1/N)Σ e^{−i2π·ν·coord}，MTF = |OTF| ∈ [0,1]。
