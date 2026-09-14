@@ -120,12 +120,12 @@
       <section id="stage3d">
         <canvas id="view"></canvas>
         <svg id="layout2d"></svg>
-        <div id="hud" class="hud">
+        <div id="hud" class="hud hidden">
           <div class="title">Lens-3D · M1+</div>
           <div class="status">Three.js 加载中…</div>
           <div id="fo" class="fo"></div>
         </div>
-        <div id="vertReadout" class="vertReadout">顶点 3D 坐标</div>
+        <div id="vertReadout" class="vertReadout hidden">顶点 3D 坐标</div>
         <div id="toolbar" class="toolbar">
           <div class="seg" id="viewSeg">
             <button data-view="iso" class="vbtn" type="button">等轴测</button>
@@ -136,8 +136,8 @@
           </div>
           <span class="sep"></span>
           <button id="resetView" type="button">重置视角(Y-Z)</button>
-          <button id="hudToggle" class="btn-link active" type="button" title="显示/隐藏 左上信息窗">信息</button>
-          <button id="readoutToggle" class="btn-link active" type="button" title="显示/隐藏 右上坐标窗">坐标</button>
+          <button id="hudToggle" class="btn-link" type="button" title="显示/隐藏 左上信息窗">信息</button>
+          <button id="readoutToggle" class="btn-link" type="button" title="显示/隐藏 右上坐标窗">坐标</button>
           <a id="backLauncher" class="btn-link" href="../">返回启动台</a>
           <span class="sep"></span>
           <span class="hint">左键旋转 · 右键/滚轮缩放 · 中键平移</span>
@@ -145,6 +145,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.1.9"></script>
+  <script type="module" src="js/main.js?v=1.2.0"></script>
 </body>
 </html>
