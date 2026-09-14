@@ -664,7 +664,7 @@ function updateMtf() {
   if ((mtfMode?.value || 'freq') === 'focus') return updateMtfFocus();
   if (mtfNuLabel) mtfNuLabel.textContent = '最高频率';
   const nGrid = Math.max(7, Math.min(41, parseInt(mtfGrid?.value, 10) || 21)) | 0;
-  const nuMax = Math.max(10, Math.min(1000, parseFloat(mtfNu?.value) || 100));
+  const nuMax = Math.max(10, Math.min(1000, parseFloat(mtfNu?.value) || 45));
   const mode = fmodeEl?.value || 'angle';
   const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
   const fsel = mtfField?.value || 'all';
@@ -786,7 +786,7 @@ function updateMtfFocus() {
   const toUm = unit === 'mm' ? 1000 : 1;                           // 1 显示单位 = toUm µm
   if (!(fno > 0)) { renderMtfFocusSVG(mtfMain, { dz: [], sets: [], ref: null, nuEval: 0, nm: pri.nm || 587.56, fno: 0, nuC: 0, mode, unit, toUm }); return; }
   const nuC = 1 / (lamUm * fno);                                   // 衍射截止 lp/mm
-  const nuEval = Math.max(1, Math.min(1000, parseFloat(mtfNu?.value) || 100));
+  const nuEval = Math.max(1, Math.min(1000, parseFloat(mtfNu?.value) || 45));
   const rangeIn = parseFloat(mtfFocusRange?.value);
   const rangeUm = (isFinite(rangeIn) && rangeIn > 0) ? rangeIn * toUm : (4 * lamUm * fno * fno);  // 轴向 ±µm
   const NSTEP = 41;

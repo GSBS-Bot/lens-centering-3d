@@ -109,7 +109,7 @@
               <label title="离焦单位(µm / mm)">单位 <select id="mtfFocusUnit"><option value="um">µm</option><option value="mm">mm</option></select></label>
               <label title="显示哪些视场">场 <select id="mtfField"><option value="all">全部</option></select></label>
               <label title="入瞳采样网格密度">网格 <input id="mtfGrid" type="number" value="21" min="7" max="41" step="2"></label>
-              <label title="频率曲线的横轴上限 / 离焦曲线的评估频率"><span id="mtfNuLabel">最高频率</span> <input id="mtfNu" type="number" value="100" min="1" max="1000" step="5"> lp/mm</label>
+              <label title="频率曲线的横轴上限 / 离焦曲线的评估频率"><span id="mtfNuLabel">最高频率</span> <input id="mtfNu" type="number" value="45" min="1" max="1000" step="5"> lp/mm</label>
               <label title="用哪个/哪些波长（全部=复色）">波长 <select id="mtfWavelength"><option value="all">全部</option><option value="primary">主波长</option></select></label>
             </div>
             <svg id="mtfMain"></svg>
@@ -145,6 +145,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.1.8"></script>
+  <script type="module" src="js/main.js?v=1.1.9"></script>
 </body>
 </html>
