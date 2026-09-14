@@ -158,7 +158,7 @@ select:hover { border-color: var(--accent); }
   transition: border-color .12s, color .12s; }
 .wl-head button:hover { border-color: var(--accent); color: var(--accent); }
 .wl-table { display: grid; gap: 5px; }
-.wl-row { display: grid; grid-template-columns: 18px 1fr 46px 22px 1fr 22px; gap: 5px; align-items: center; }
+.wl-row { display: grid; grid-template-columns: 18px 1fr 60px 22px 1fr 22px; gap: 5px; align-items: center; }
 .wl-row input { background: var(--input); color: var(--fg); border: 1px solid var(--line);
   border-radius: 6px; padding: 4px 7px; font-size: 12px; }
 .wl-row input:focus { outline: none; border-color: var(--accent); }
@@ -283,7 +283,7 @@ select:hover { border-color: var(--accent); }
 
   .fieldbar input[type="text"] { width: 96px; }
   .fieldbar, .topbar, .wlbar, .side-head { padding-left: 10px; padding-right: 10px; }
-  .wl-row { grid-template-columns: 18px 1fr 42px 18px 1fr 18px; gap: 4px; }
+  .wl-row { grid-template-columns: 18px 1fr 56px 18px 1fr 18px; gap: 4px; }
 }
 
 /* 手机竖屏：进一步精简 */
