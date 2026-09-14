@@ -1028,7 +1028,7 @@ if (refreshBtn) refreshBtn.addEventListener('click', () => { sys = ldm.sys; rebu
 function loadCurrent() {
   const file = demoSel.value;
   if (!file) return;
-  loadZmxFile(file, false)
+  loadZmxFile(file)
     .then(s => setStatus(`载入 «${s.name}» · 面 ${s.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true))
     .catch(e => fail(e));
 }
