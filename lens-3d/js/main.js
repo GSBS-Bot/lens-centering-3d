@@ -694,6 +694,7 @@ function updateMtf() {
   const vigs = vigForFields(fields);
   const sets = fields.map((fv, fi) => {
     const items = [];
+    const geoPts = [];                                // 几何：所有波长落点(带权重)汇总
     let refX, refY;                                   // 复色：各波长共用同一 OPD 参考球心(否则相对相位乱)
     for (const w of wlList) {
       const lam = (w.nm || 587.56) / 1000;
@@ -704,24 +705,31 @@ function updateMtf() {
         items.push({ kind: 'diff', otf: otfFromPupil(wv.re, wv.im, wv.N), N: wv.N, R: wv.R, nuC: wv.nuC, weight: w.weight ?? 1 });
       } else {
         const pts = (traceSpot(sys, surfaceList, { mode, field: +fv, lambdaUm: lam, nGrid, vigCoef: vigs ? vigs[fi] : null }).points) || [];
-        items.push({ kind: 'geo', pts, weight: w.weight ?? 1 });
+        const wv = w.weight ?? 1;
+        for (const p of pts) geoPts.push([p[0], p[1], wv]);   // 每个落点带该波长权重
       }
     }
+    if (algo !== 'diff') items.push({ kind: 'geoAll', pts: geoPts });
     const sw = items.reduce((a, b) => a + (b.weight || 1), 0) || 1;
     const T = new Array(nus.length).fill(0), S = new Array(nus.length).fill(0);
     for (let q = 0; q < nus.length; q++) {
       let rT = 0, iT = 0, rS = 0, iS = 0;
       for (const it of items) {
-        const w = (it.weight || 1) / sw;
         if (it.kind === 'diff') {
+          const w = (it.weight || 1) / sw;
           const s = it.nuC > 0 ? nus[q] / it.nuC : (nus[q] > 0 ? 1 : 0);
           const cT = sampleOtfComplex(it.otf, it.N, it.R, s, 'T');
           const cS = sampleOtfComplex(it.otf, it.N, it.R, s, 'S');
           rT += w * cT.re; iT += w * cT.im; rS += w * cS.re; iS += w * cS.im;
-        } else {
-          const cT = geometricOTFComplex(it.pts, nus[q], 'y');
-          const cS = geometricOTFComplex(it.pts, nus[q], 'x');
-          rT += w * cT.re; iT += w * cT.im; rS += w * cS.re; iS += w * cS.im;
+        } else {   // geoAll：所有波长落点按权重做一次加权复 OTF（与友站一致）
+          let srT = 0, siT = 0, srS = 0, siS = 0, sw2 = 0;
+          for (const p of it.pts) {
+            const wv = p[2]; sw2 += wv;
+            const pT = 2 * Math.PI * nus[q] * p[1], pS = 2 * Math.PI * nus[q] * p[0];
+            srT += wv * Math.cos(pT); siT -= wv * Math.sin(pT);
+            srS += wv * Math.cos(pS); siS -= wv * Math.sin(pS);
+          }
+          if (sw2 > 0) { rT += srT / sw2; iT += siT / sw2; rS += srS / sw2; iS += siS / sw2; }
         }
       }
       T[q] = Math.min(1, Math.hypot(rT, iT)); S[q] = Math.min(1, Math.hypot(rS, iS));
