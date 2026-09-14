@@ -143,6 +143,34 @@ export function throughFocusMTF(N, R, s0, w20List) {
   });
 }
 
+/* ---------- 由真实复瞳函数生成离焦 MTF 曲线（P0b 接入）----------
+   re,im: 真实瞳函数(N×N, 半径 R 样本, 含真实 OPD)；
+   nuC: 衍射截止(lp/mm)；nu: 评估频率(lp/mm)；w20List: 离焦波差(波)。
+   对每个 W20 叠加离焦相位 exp(i·2π·W20·ρ²) 后求 MTF，返回 { T:[], S:[] }。 */
+export function throughFocusFromPupil(re, im, N, R, nuC, nu, w20List) {
+  const o = N >> 1, R2 = R * R, s = nuC > 0 ? nu / nuC : 0;
+  const T = [], S = [];
+  for (let q = 0; q < w20List.length; q++) {
+    const w = w20List[q];
+    const rr = new Float64Array(N * N), ii = new Float64Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const k = y * N + x, pr = re[k], pi = im[k];
+      if (!pr && !pi) continue;
+      const dx = x - o, dy = y - o;
+      const ph = 2 * Math.PI * w * (dx * dx + dy * dy) / R2;
+      const cs = Math.cos(ph), sn = Math.sin(ph);
+      rr[k] = pr * cs - pi * sn;
+      ii[k] = pr * sn + pi * cs;
+    }
+    const g = otfFromPupil(rr, ii, N);
+    const cT = sampleOtfComplex(g, N, R, s, 'T');
+    const cS = sampleOtfComplex(g, N, R, s, 'S');
+    T.push(Math.min(1, Math.hypot(cT.re, cT.im)));
+    S.push(Math.min(1, Math.hypot(cS.re, cS.im)));
+  }
+  return { T, S };
+}
+
 /* ---------- 几何 MTF（由点列直接算，无需 OPD/离焦/FFT 网格）----------
    几何 PSF 视作等权重光线落点 (1/N)Σ δ(x−x_k, y−y_k)；
    沿某方向的 1D OTF = (1/N)Σ e^{−i2π·ν·coord}，MTF = |OTF| ∈ [0,1]。

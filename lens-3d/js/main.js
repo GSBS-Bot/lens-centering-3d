@@ -6,7 +6,7 @@ import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, set
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile } from './import.js?v=0.8.4';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=0.8.4';
-import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil } from './mtf.js?v=0.8.4';
+import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, throughFocusFromPupil, throughFocusMTF, defocusWaves } from './mtf.js?v=1.1.0';
 
 const STATUS = document.querySelector('.status');
 const renderFo = document.getElementById('fo');
@@ -41,6 +41,9 @@ const mtfField = document.getElementById('mtfField');
 const mtfGrid = document.getElementById('mtfGrid');
 const mtfNu = document.getElementById('mtfNu');
 const mtfWavelength = document.getElementById('mtfWavelength');
+const mtfMode = document.getElementById('mtfMode');
+const mtfFocusNu = document.getElementById('mtfFocusNu');
+const mtfFocusRange = document.getElementById('mtfFocusRange');
 const vigEl = document.getElementById('fieldVig');
 
 function setStatus(msg, ok) {
@@ -644,6 +647,7 @@ function populateMtfSelects() {
 function mtfHex(n) { return '#' + adaptHexNum(n).toString(16).padStart(6, '0'); }
 function updateMtf() {
   if (!mtfMain) return;
+  if ((mtfMode?.value || 'freq') === 'focus') return updateMtfFocus();
   const nGrid = Math.max(7, Math.min(41, parseInt(mtfGrid?.value, 10) || 21)) | 0;
   const nuMax = Math.max(10, Math.min(1000, parseFloat(mtfNu?.value) || 100));
   const mode = fmodeEl?.value || 'angle';
@@ -749,6 +753,87 @@ function renderMtfSVG(el, d) {
     if (lx > W - mr - 140 && i < d.sets.length - 1) { lx = ml; ly += 16; }
   }
   g.push(`<text x="${ml}" y="${H - 8}" fill="#6D7B86" font-size="10" font-family="ui-monospace,monospace">${d.algo === 'diff' ? '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 波前 OPD 以主光线像点为参考球心(离焦未含)' : '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 几何 MTF 近衍射极限时偏高，仅供参考'}</text>`);
+  el.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  el.innerHTML = g.join('');
+}
+
+// ---- P0b：MTF 离焦曲线（真实波前瞳函数 + 离焦相位扫描）----
+function updateMtfFocus() {
+  const mode = fmodeEl?.value || 'angle';
+  const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
+  const fsel = mtfField?.value || 'all';
+  const fields = fsel === 'all' ? baseList : [+fsel];
+  const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
+  const lamUm = (pri.nm || 587.56) / 1000;
+  const fno = (lastTrace.fo && isFinite(lastTrace.fo.fno)) ? lastTrace.fo.fno : (sys.fno || 0);
+  if (!(fno > 0)) { renderMtfFocusSVG(mtfMain, { dz: [], sets: [], ref: null, nuEval: 0, nm: pri.nm || 587.56, fno: 0, nuC: 0, mode }); return; }
+  const nuC = 1 / (lamUm * fno);                                   // 衍射截止 lp/mm
+  const nuEval = Math.max(1, Math.min(1000, parseFloat(mtfFocusNu?.value) || 30));
+  const range = Math.max(1, parseFloat(mtfFocusRange?.value) || (4 * lamUm * fno * fno));  // 轴向 ±µm
+  const NSTEP = 41;
+  const dz = []; for (let k = 0; k < NSTEP; k++) dz.push(-range + 2 * range * k / (NSTEP - 1));
+  const w20 = dz.map(z => defocusWaves(z / 1000, fno, lamUm));     // 波差(波)
+  const sets = fields.map(fv => {
+    const wv = traceWavefront(sys, surfaceList, { mode, field: +fv, lambdaUm: lamUm, nGrid: 64 });
+    if (!wv.ok) return { field: +fv, T: new Array(NSTEP).fill(0), S: new Array(NSTEP).fill(0), ok: false };
+    const { T, S } = throughFocusFromPupil(wv.re, wv.im, wv.N, wv.R, wv.nuC, nuEval, w20);
+    return { field: +fv, T, S, ok: true };
+  });
+  const s0 = nuC > 0 ? Math.min(0.999, nuEval / nuC) : 0;          // 衍射极限参考(理想圆孔·同离焦)
+  const ref = s0 > 0 ? throughFocusMTF(128, 31, s0, w20) : null;
+  renderMtfFocusSVG(mtfMain, { dz, sets, ref, nuEval, nm: pri.nm || 587.56, fno, nuC, mode });
+}
+function renderMtfFocusSVG(el, d) {
+  const W = 660, H = 380, ml = 56, mr = 24, mt = 40, mb = 92;
+  const pw = W - ml - mr, ph = H - mt - mb;
+  const dmax = Math.max(1e-9, ...d.dz.map(Math.abs));
+  const xs = z => ml + (z + dmax) / (2 * dmax) * pw;
+  const ys = m => mt + (1 - Math.max(0, Math.min(1, m))) * ph;
+  const g = [];
+  g.push(`<text x="${ml - 44}" y="20" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">MTF 离焦曲线（波前 · 衍射 FFT） · 面： 像面</text>`);
+  g.push(`<text x="${W - mr}" y="20" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">@${Math.round(d.nm)}nm · F#${d.fno > 0 ? d.fno.toFixed(2) : '—'} · 评估 ${Math.round(d.nuEval)} lp/mm</text>`);
+  for (let k = 0; k <= 5; k++) {
+    const m = k / 5, y = ys(m);
+    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(m * 100).toFixed(0)}%</text>`);
+  }
+  const nx = 6;
+  for (let k = 0; k <= nx; k++) {
+    const z = -dmax + 2 * dmax * k / nx, x = xs(z);
+    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${z.toFixed(Math.abs(z) < 10 ? 1 : 0)}</text>`);
+  }
+  g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  g.push(`<text x="${ml + pw / 2}" y="${mt + ph + 32}" text-anchor="middle" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">离焦 (µm)</text>`);
+  if (d.ref) {
+    const pts = d.ref.map((m, k) => `${xs(d.dz[k]).toFixed(1)},${ys(m).toFixed(1)}`).join(' ');
+    g.push(`<polyline points="${pts}" fill="none" stroke="#6D7B86" stroke-width="1.2" stroke-dasharray="5 3"/>`);
+  }
+  let bestI = 0, bestV = -1;
+  for (let k = 0; k < d.dz.length; k++) { let v = 0; for (const s of d.sets) v += s.T[k]; if (v > bestV) { bestV = v; bestI = k; } }
+  if (d.dz.length) {
+    const xb = xs(d.dz[bestI]);
+    g.push(`<line x1="${xb.toFixed(1)}" y1="${mt}" x2="${xb.toFixed(1)}" y2="${mt + ph}" stroke="#3ddc97" stroke-width="1" stroke-dasharray="3 3" opacity=".9"/>`);
+    g.push(`<text x="${(xb + 4).toFixed(1)}" y="${mt + 12}" fill="#3ddc97" font-size="10" font-family="ui-monospace,monospace">最佳焦面 ${d.dz[bestI].toFixed(1)}µm</text>`);
+  }
+  d.sets.forEach((s, i) => {
+    const c = mtfHex(FIELDCOLS[i % FIELDCOLS.length]);
+    const pT = s.T.map((m, k) => `${xs(d.dz[k]).toFixed(1)},${ys(m).toFixed(1)}`).join(' ');
+    const pS = s.S.map((m, k) => `${xs(d.dz[k]).toFixed(1)},${ys(m).toFixed(1)}`).join(' ');
+    g.push(`<polyline points="${pS}" fill="none" stroke="${c}" stroke-width="1.2" stroke-dasharray="4 3" opacity=".85"/>`);
+    g.push(`<polyline points="${pT}" fill="none" stroke="${c}" stroke-width="1.8"/>`);
+  });
+  let lx = ml, ly = H - 40;
+  for (let i = 0; i < d.sets.length; i++) {
+    const s = d.sets[i], c = mtfHex(FIELDCOLS[i % FIELDCOLS.length]);
+    const label = `${(+s.field).toFixed(2)}${d.mode === 'height' ? 'mm' : '°'}`;
+    const pk = s.T.length ? Math.max(...s.T) : 0;
+    const txt = `场 ${label}  T峰值=${pk.toFixed(2)}`;
+    g.push(`<line x1="${lx}" y1="${ly}" x2="${lx + 16}" y2="${ly}" stroke="${c}" stroke-width="2"/><text x="${lx + 20}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${txt}</text>`);
+    lx += 20 + txt.length * 6.4 + 14;
+    if (lx > W - mr - 140 && i < d.sets.length - 1) { lx = ml; ly += 16; }
+  }
+  g.push(`<text x="${ml}" y="${H - 8}" fill="#6D7B86" font-size="10" font-family="ui-monospace,monospace">实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(理想圆孔·同离焦) · 绿虚线=最佳焦面(各视场T之和最大) · 单色(主波长)</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }
@@ -947,7 +1032,7 @@ for (const el of [illumGrid, illumN, illumWavelength]) {
   if (el) el.addEventListener('input', () => updateIllum());
   if (el) el.addEventListener('change', () => updateIllum());
 }
-for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength]) {
+for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength, mtfMode, mtfFocusNu, mtfFocusRange]) {
   if (el) el.addEventListener('input', () => updateMtf());
   if (el) el.addEventListener('change', () => updateMtf());
 }
