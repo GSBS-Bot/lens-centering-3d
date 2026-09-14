@@ -481,13 +481,18 @@ function updateSpot() {
       const s = traceSpot(sys, surfaceList, { mode: fmodeEl?.value || 'angle', field: fv, lambdaUm: w.nm / 1000, nGrid });
       return { nm: w.nm, weight: w.weight, color: w.color || '#ffb300', points: s.points };
     });
-    // 质心 / RMS / GEO(含全部波长)
-    let cx = 0, cy = 0, n = 0;
-    for (const gr of groups) for (const p of gr.points) { cx += p[0]; cy += p[1]; n++; }
-    n = n || 1; cx /= n; cy /= n;
+    // 质心 / RMS / GEO：按波长权重加权（权重全为 0 时退化为等权）
+    const rawW = gr => { const v = +gr.weight; return (isFinite(v) && v >= 0) ? v : 1; };
+    let wsum = 0;
+    for (const gr of groups) wsum += rawW(gr) * gr.points.length;
+    const wgtOf = gr => (wsum > 0 ? rawW(gr) : 1);
+    if (!(wsum > 0)) { wsum = 0; for (const gr of groups) wsum += gr.points.length; }
+    let cx = 0, cy = 0;
+    for (const gr of groups) { const wgt = wgtOf(gr); for (const p of gr.points) { cx += wgt * p[0]; cy += wgt * p[1]; } }
+    cx /= (wsum || 1); cy /= (wsum || 1);
     let rms = 0, geo = 0;
-    for (const gr of groups) for (const p of gr.points) { const dx = p[0] - cx, dy = p[1] - cy, d2 = dx * dx + dy * dy; rms += d2; if (d2 > geo) geo = d2; }
-    rms = Math.sqrt(rms / n); geo = Math.sqrt(geo);
+    for (const gr of groups) { const wgt = wgtOf(gr); for (const p of gr.points) { const dx = p[0] - cx, dy = p[1] - cy, d2 = dx * dx + dy * dy; rms += wgt * d2; if (d2 > geo) geo = d2; } }
+    rms = Math.sqrt(rms / (wsum || 1)); geo = Math.sqrt(geo);
     gwin = Math.max(gwin, geo * 1.6);
     spots.push({ field: fv, groups, cx, cy, rms, geo, imageY: cy });
   });
@@ -545,7 +550,7 @@ function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
   g.push(`<text x="${pad}" y="${ty + 14}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">视场      : ${spots.map((s, i) => ('' + (i + 1))).join('          ')}</text>`);
   g.push(`<text x="${pad}" y="${ty + 30}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">RMS 半径  : ${spots.map(s => (s.rms * 1000).toFixed(1)).join('       ')}</text>`);
   g.push(`<text x="${pad}" y="${ty + 46}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">GEO 半径  : ${spots.map(s => (s.geo * 1000).toFixed(1)).join('       ')}</text>`);
-  g.push(`<text x="${pad}" y="${ty + 64}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">单位 μm · 参考: 主光线 · 窗口 ±${(win * 1000).toFixed(0)}μm @${Math.round(primaryNm)}nm</text>`);
+  g.push(`<text x="${pad}" y="${ty + 64}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">单位 μm · 中心: 加权质心 · RMS 按波长权重 · 窗口 ±${(win * 1000).toFixed(0)}μm @${Math.round(primaryNm)}nm</text>`);
   el.setAttribute('viewBox', `0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
   el.innerHTML = g.join('');
 }
