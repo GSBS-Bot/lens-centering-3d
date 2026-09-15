@@ -239,7 +239,7 @@ export function traceRay3(sys, surfaceList, P0, D0, lam, ignoreAp, noCollect) {
     imageX = P[0] + t * D[0]; imageY = P[1] + t * D[1];
     if (!noCollect) pts.push([imageX, imageY, 0]);  // 投到像面 z=0
   }
-  return { ok: true, hits, pts, opl, lastHit: P, blockedAt: -1, why: 'ok', imageX, imageY, vignetted: false };
+  return { ok: true, hits, pts, opl, lastHit: P, blockedAt: -1, why: 'ok', imageX, imageY, dir: [D[0], D[1], D[2]], vignetted: false };
 }
 
 // 一阶量（近轴旁轴追迹，物在无穷远）：EFL/BFL/F#。用单位高度 h=1 的旁轴边缘光线。
@@ -639,6 +639,117 @@ export function traceSpot(sys, surfaceList, cfg = {}) {
     if (tr.ok && tr.imageX != null && tr.imageY != null) points.push([tr.imageX, tr.imageY]);
   }
   return { field: fv, mode, points, epd, n: N };
+}
+
+// ---- 光扇图(Ray Fan)：某视场/波长，沿子午(px=0, py 扫描)与弧矢(py=0, px 扫描)采样，
+//      记录相对主光线像点的横向像差 (εy, εx)，单位 mm。 ----
+export function traceRayFan(sys, surfaceList, cfg = {}) {
+  const lam = cfg.lambdaUm ?? LAM_D;
+  const mode = cfg.mode === 'height' ? 'height' : 'angle';
+  const fv = cfg.field ?? 0;
+  const N = Math.max(3, Math.min(41, cfg.nGrid ?? 21)) | 0;
+  const S = opticalSurfaces(sys, surfaceList);
+  const base = { field: fv, mode, mer: [], sag: [], ok: false, epd: 0 };
+  if (!S.length) return base;
+  const b = traceFieldBundle(sys, surfaceList, { mode, field: fv, nPupil: 1, lambdaUm: lam });
+  const c = b.chief;
+  if (!c) return { ...base, epd: b.epd };
+  const finite = c._finite;
+  const param = (c._a != null ? c._a : c._h) || 0;
+  const theta = c._theta ?? 0;
+  const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
+  const buildRay = (px, py) => {
+    if (finite) {
+      const dx = px * epd / 2, dy = py * epd / 2 - param, dz = zEP - zObj;
+      const L = Math.hypot(dx, dy, dz) || 1;
+      return { P0: [0, param, zObj], D0: [dx / L, dy / L, dz / L] };
+    }
+    const ang = theta * Math.PI / 180;
+    return { P0: [px * epd / 2, param + py * epd / 2, zStart], D0: [0, Math.sin(ang), Math.cos(ang)] };
+  };
+  const hit = (px, py) => {
+    const rb = buildRay(px, py);
+    const tr = traceRay3(sys, surfaceList, rb.P0, rb.D0, lam, false);
+    if (!(tr.ok && tr.imageX != null && tr.imageY != null)) return null;
+    const D = tr.dir || [0, 0, 1], uz = Math.abs(D[2]) > 1e-12 ? D[2] : 1;
+    return { x: tr.imageX, y: tr.imageY, ux: D[0] / uz, uy: D[1] / uz };
+  };
+  const ch = hit(0, 0);
+  if (!ch) return { ...base, ok: false, epd };
+  const cx = ch.x, cy = ch.y;
+  const mer = [], sag = [];
+  for (let k = 0; k < N; k++) { const p = -1 + 2 * k / (N - 1); const a = hit(0, p); mer.push({ p, e: a ? a.y - cy : null }); }
+  for (let k = 0; k < N; k++) { const p = -1 + 2 * k / (N - 1); const a = hit(p, 0); sag.push({ p, e: a ? a.x - cx : null }); }
+  return { field: fv, mode, mer, sag, ok: true, epd, chiefX: cx, chiefY: cy };
+}
+
+// ---- 场曲/像散 + 畸变：逐视场求 主光线像高(畸变) 与 子午/弧矢最佳焦移(mm) ----
+// 理想像高：角度模式 = EFL·tanθ；像高模式 = 场值 h。畸变% = (实际-理想)/理想×100。
+// 场曲：在 ±range(mm) 内扫离焦，取子午/弧矢光扇相对主光线 RMS 最小时的焦移(+z=朝物方)。
+export function fieldAberrations(sys, surfaceList, cfg = {}) {
+  const lam = cfg.lambdaUm ?? LAM_D;
+  const mode = cfg.mode === 'height' ? 'height' : 'angle';
+  const list = (cfg.fields && cfg.fields.length) ? cfg.fields : [0];
+  const nP = Math.max(3, Math.min(21, cfg.nPupil ?? 9)) | 0;
+  const nZ = Math.max(3, Math.min(41, cfg.nDefocus ?? 21)) | 0;
+  const range = cfg.range ?? 0;
+  const S = opticalSurfaces(sys, surfaceList);
+  const fo = firstOrder(sys, surfaceList, lam);
+  const efl = fo ? fo.efl : 0;
+  const items = [];
+  for (const fv of list) {
+    const b = traceFieldBundle(sys, surfaceList, { mode, field: fv, nPupil: 1, lambdaUm: lam });
+    const c = b.chief;
+    if (!c) { items.push({ field: fv, ok: false }); continue; }
+    const finite = c._finite;
+    const param = (c._a != null ? c._a : c._h) || 0;
+    const theta = c._theta ?? 0;
+    const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
+    const buildRay = (px, py) => {
+      if (finite) {
+        const dx = px * epd / 2, dy = py * epd / 2 - param, dz = zEP - zObj;
+        const L = Math.hypot(dx, dy, dz) || 1;
+        return { P0: [0, param, zObj], D0: [dx / L, dy / L, dz / L] };
+      }
+      const ang = theta * Math.PI / 180;
+      return { P0: [px * epd / 2, param + py * epd / 2, zStart], D0: [0, Math.sin(ang), Math.cos(ang)] };
+    };
+    const hit = (px, py) => {
+      const rb = buildRay(px, py);
+      const tr = traceRay3(sys, surfaceList, rb.P0, rb.D0, lam, false);
+      if (!(tr.ok && tr.imageX != null && tr.imageY != null)) return null;
+      const D = tr.dir || [0, 0, 1], uz = Math.abs(D[2]) > 1e-12 ? D[2] : 1;
+      return { x: tr.imageX, y: tr.imageY, ux: D[0] / uz, uy: D[1] / uz };
+    };
+    const ch = hit(0, 0);
+    if (!ch) { items.push({ field: fv, ok: false }); continue; }
+    // 理想像高取近轴一阶 EFL·tanθ（θ=主光线物方半视场角）；与场模式无关，height 模式下 θ 由主光线解出。
+    const idealY = efl * Math.tan(theta * Math.PI / 180);
+    const dist = Math.abs(idealY) > 1e-9 ? (ch.y - idealY) / idealY * 100 : 0;
+    const merP = [], sagP = [];
+    for (let k = 0; k < nP; k++) {
+      const p = -1 + 2 * k / (nP - 1);
+      const a = hit(0, p); if (a) merP.push(a);
+      const s = hit(p, 0); if (s) sagP.push(s);
+    }
+    let tFocus = 0, sFocus = 0;
+    if (range > 0 && merP.length && sagP.length) {
+      const at = (it, key, dz) => (key === 'y' ? it.y + it.uy * dz : it.x + it.ux * dz);
+      const rms = (arr, key, dz) => {
+        const ref = at(ch, key, dz);
+        let s = 0; for (const it of arr) { const v = at(it, key, dz) - ref; s += v * v; }
+        return Math.sqrt(s / arr.length);
+      };
+      const best = (arr, key) => {
+        let bz = 0, bv = Infinity;
+        for (let k = 0; k < nZ; k++) { const dz = -range + 2 * range * k / (nZ - 1); const v = rms(arr, key, dz); if (v < bv) { bv = v; bz = dz; } }
+        return bz;
+      };
+      tFocus = best(merP, 'y'); sFocus = best(sagP, 'x');
+    }
+    items.push({ field: fv, ok: true, theta, realY: ch.y, realX: ch.x, idealY, dist, tFocus, sFocus });
+  }
+  return { mode, efl, nPupil: nP, items };
 }
 
 // ---- 相对照度（一维）------------------------------------------------------

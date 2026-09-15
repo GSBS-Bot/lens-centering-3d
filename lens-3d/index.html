@@ -80,6 +80,7 @@
             <button id="tabSpot" class="tab active" type="button">点列图</button>
             <button id="tabIllum" class="tab" type="button">相对照度</button>
             <button id="tabMtf" class="tab" type="button">MTF</button>
+            <button id="tabAber" class="tab" type="button">像差</button>
           </div>
           <span id="layoutBadge" class="layoutBadge"></span>
         </div>
@@ -114,6 +115,16 @@
             </div>
             <svg id="mtfMain"></svg>
           </div>
+          <div id="aberView" class="spotView">
+            <div class="spot-ctrl">
+              <label title="像差图类型">类型 <select id="aberType"><option value="fan">光扇图(Ray Fan)</option><option value="field">场曲 / 像散</option><option value="dist">畸变</option></select></label>
+              <label title="光扇图采样点数">采样 <input id="aberGrid" type="number" value="21" min="5" max="41" step="2"></label>
+              <label title="场曲离焦扫描半范围(±mm)">范围 <input id="aberRange" type="number" min="0" step="any" value="0.5"> mm</label>
+              <label title="显示哪些视场">场 <select id="aberField"><option value="all">全部</option></select></label>
+              <label title="用哪个/哪些波长">波长 <select id="aberWavelength"><option value="all">全部</option><option value="primary">主波长</option></select></label>
+            </div>
+            <svg id="aberMain"></svg>
+          </div>
         </div>
       </section>
       <div id="vGrip" class="grip-h" title="拖动调整 图表 与 3D 高度"></div>
@@ -145,6 +156,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.4.4"></script>
+  <script type="module" src="js/main.js?v=1.4.5"></script>
 </body>
 </html>

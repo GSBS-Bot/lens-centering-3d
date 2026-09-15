@@ -5,7 +5,7 @@ import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.0';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=1.4.2';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.4.5';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
@@ -46,6 +46,14 @@ const mtfNuLabel = document.getElementById('mtfNuLabel');
 const mtfFocusRange = document.getElementById('mtfFocusRange');
 const mtfFocusUnit = document.getElementById('mtfFocusUnit');
 const mtfFocusUnitLabel = document.getElementById('mtfFocusUnitLabel');
+const tabAber = document.getElementById('tabAber');
+const aberView = document.getElementById('aberView');
+const aberMain = document.getElementById('aberMain');
+const aberType = document.getElementById('aberType');
+const aberGrid = document.getElementById('aberGrid');
+const aberRange = document.getElementById('aberRange');
+const aberField = document.getElementById('aberField');
+const aberWavelength = document.getElementById('aberWavelength');
 const vigEl = document.getElementById('fieldVig');
 
 function setStatus(msg, ok) {
@@ -461,15 +469,19 @@ function setPanelTab(which) {
   const isSpot = which === 'spot';
   const isIllum = which === 'illum';
   const isMtf = which === 'mtf';
+  const isAber = which === 'aber';
   if (spotView) spotView.classList.toggle('on', isSpot);
   if (illumView) illumView.classList.toggle('on', isIllum);
   if (mtfView) mtfView.classList.toggle('on', isMtf);
+  if (aberView) aberView.classList.toggle('on', isAber);
   if (tabSpot) tabSpot.classList.toggle('active', isSpot);
   if (tabIllum) tabIllum.classList.toggle('active', isIllum);
   if (tabMtf) tabMtf.classList.toggle('active', isMtf);
+  if (tabAber) tabAber.classList.toggle('active', isAber);
   if (isSpot) updateSpot();
   else if (isIllum) updateIllum();
   else if (isMtf) updateMtf();
+  else if (isAber) updateAber();
 }
 function populateSpotSelects() {
   if (spotField) {
@@ -573,6 +585,181 @@ function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
   g.push(`<text x="${pad}" y="${ty + 46}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">GEO 半径  : ${spots.map(s => (s.geo * 1000).toFixed(1)).join('       ')}</text>`);
   g.push(`<text x="${pad}" y="${ty + 64}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">单位 μm · 中心: 加权质心 · RMS 按波长权重 · 窗口 ±${(win * 1000).toFixed(0)}μm @${Math.round(primaryNm)}nm</text>`);
   el.setAttribute('viewBox', `0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
+  el.innerHTML = g.join('');
+}
+
+// ---- 像差图（M2b 第二步）：光扇图 / 场曲·像散 / 畸变 ----
+function populateAberSelects() {
+  if (aberField) {
+    const list = parseFields(fvalsEl?.value); if (!list.length) list.push(0);
+    const cur = aberField.value;
+    aberField.innerHTML = '<option value="all">全部</option>' + list.map(f => `<option value="${f}">${f}</option>`).join('');
+    aberField.value = (cur && aberField.querySelector(`option[value="${cur}"]`)) ? cur : 'all';
+  }
+  if (aberWavelength) {
+    const wl = activeLambdas().lambdas; const cur = aberWavelength.value;
+    aberWavelength.innerHTML = '<option value="all">全部</option><option value="primary">主波长</option>' + wl.map(w => `<option value="${w.nm}">${Math.round(w.nm)}nm</option>`).join('');
+    aberWavelength.value = (cur && aberWavelength.querySelector(`option[value="${cur}"]`)) ? cur : 'all';
+  }
+}
+function updateAber() {
+  if (!aberMain) return;
+  const type = aberType?.value || 'fan';
+  const nGrid = Math.max(5, Math.min(41, parseInt(aberGrid?.value, 10) || 21)) | 0;
+  const mode = fmodeEl?.value || 'angle';
+  const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
+  const wsel = aberWavelength?.value || 'all';
+  const wlList = wsel === 'all' ? wlAll : (wsel === 'primary' ? [pri] : wlAll.filter(w => String(w.nm) === wsel));
+  const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
+  const fsel = aberField?.value || 'all';
+  const fields = fsel === 'all' ? baseList : [+fsel];
+  const lamPri = pri.nm / 1000;
+  if (type === 'fan') {
+    const fans = fields.map(fv => ({
+      field: fv,
+      groups: wlList.map(w => ({ nm: w.nm, color: w.color || '#ffb300', fan: traceRayFan(sys, surfaceList, { mode, field: fv, lambdaUm: w.nm / 1000, nGrid }) })),
+    }));
+    renderAberFanSVG(aberMain, fans, wlList, mode, pri.nm);
+  } else if (type === 'field') {
+    const range = Math.max(0, parseFloat(aberRange?.value) || 0.5);
+    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, nPupil: Math.min(15, Math.max(5, nGrid)), nDefocus: 21, range });
+    renderAberFieldSVG(aberMain, res, mode);
+  } else {
+    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, nPupil: 5, nDefocus: 3, range: 0 });
+    renderAberDistSVG(aberMain, res, mode);
+  }
+}
+function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
+  const pad = 10, headerH = 30, cellW = 250, plotSize = 168, titleH = 22, gap = 14;
+  const cols = Math.max(1, fans.length);
+  const W = pad * 2 + cols * cellW + (cols - 1) * gap;
+  const H = headerH + titleH + plotSize + 30 + pad;
+  let emax = 0;
+  for (const f of fans) for (const grp of f.groups) {
+    const fan = grp.fan; if (!fan || !fan.ok) continue;
+    for (const a of fan.mer) if (a.e != null) emax = Math.max(emax, Math.abs(a.e));
+    for (const a of fan.sag) if (a.e != null) emax = Math.max(emax, Math.abs(a.e));
+  }
+  if (!(emax > 0)) emax = 1e-3;
+  emax *= 1.15;
+  const g = [];
+  g.push(`<text x="${pad}" y="18" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">光扇图 (Ray Fan) · 面： 像面</text>`);
+  let lx = W - pad - 44;
+  for (let i = wlList.length - 1; i >= 0; i--) {
+    const w = wlList[i];
+    g.push(`<circle cx="${lx + 5}" cy="12" r="4.5" fill="${adaptHexStr(w.color)}"/>`);
+    g.push(`<text x="${lx + 14}" y="16" fill="#9caab4" font-size="10" text-anchor="start" font-family="ui-monospace,monospace">${w.nm.toFixed(2)}</text>`);
+    lx -= 52;
+  }
+  const scY = (plotSize / 2) / emax;
+  fans.forEach((f, i) => {
+    const x = pad + i * (cellW + gap), y = headerH;
+    const fieldLabel = mode === 'height' ? `像高: ${f.field.toFixed(2)} (mm)` : `物面: ${f.field.toFixed(2)} (度)`;
+    g.push(`<text x="${x}" y="${y + 12}" fill="#E6EDF1" font-size="11.5" font-family="ui-monospace,monospace">${fieldLabel}</text>`);
+    const px = x, py = y + 18;
+    for (let k = 0; k <= 4; k++) {
+      const off = k / 4 * plotSize;
+      g.push(`<line x1="${(px + off).toFixed(1)}" y1="${py}" x2="${(px + off).toFixed(1)}" y2="${py + plotSize}" stroke="#1b232d" stroke-width="1"/>`);
+      g.push(`<line x1="${px}" y1="${(py + off).toFixed(1)}" x2="${px + plotSize}" y2="${(py + off).toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    }
+    const cX = px + plotSize / 2, cY = py + plotSize / 2;
+    g.push(`<line x1="${px}" y1="${cY}" x2="${px + plotSize}" y2="${cY}" stroke="#39424d" stroke-width="1"/>`);
+    g.push(`<line x1="${cX}" y1="${py}" x2="${cX}" y2="${py + plotSize}" stroke="#39424d" stroke-width="1"/>`);
+    g.push(`<rect x="${px}" y="${py}" width="${plotSize}" height="${plotSize}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+    for (const grp of f.groups) {
+      const fan = grp.fan; if (!fan || !fan.ok) continue;
+      const pts = (arr) => arr.filter(a => a.e != null).map(a => `${(cX + a.p * (plotSize / 2)).toFixed(1)},${(cY - a.e * scY).toFixed(1)}`).join(' ');
+      const mp = pts(fan.mer), sp = pts(fan.sag);
+      if (mp) g.push(`<polyline points="${mp}" fill="none" stroke="${adaptHexStr(grp.color)}" stroke-width="1.4"/>`);
+      if (sp) g.push(`<polyline points="${sp}" fill="none" stroke="${adaptHexStr(grp.color)}" stroke-width="1.4" stroke-dasharray="4 2"/>`);
+    }
+    g.push(`<text x="${px - 4}" y="${py + 8}" text-anchor="end" fill="#9caab4" font-size="9" font-family="ui-monospace,monospace">+${(emax * 1000).toFixed(0)}</text>`);
+    g.push(`<text x="${px - 4}" y="${py + plotSize}" text-anchor="end" fill="#9caab4" font-size="9" font-family="ui-monospace,monospace">-${(emax * 1000).toFixed(0)}</text>`);
+    g.push(`<text x="${cX}" y="${py + plotSize + 14}" text-anchor="middle" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">Px/Py → ±1</text>`);
+  });
+  g.push(`<text x="${pad}" y="${H - 8}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">实线=子午(εy~Py) · 虚线=弧矢(εx~Px) · 纵轴 μm @${Math.round(primaryNm)}nm · 相对主光线像点</text>`);
+  el.setAttribute('viewBox', `0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
+  el.innerHTML = g.join('');
+}
+function renderAberFieldSVG(el, res, mode) {
+  const W = 620, H = 360, ml = 74, mr = 26, mt = 44, mb = 78;
+  const pw = W - ml - mr, ph = H - mt - mb;
+  const items = (res.items || []).filter(o => o.ok);
+  const g = [];
+  const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
+  g.push(`<text x="${ml - 46}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">场曲 / 像散 · 面： 像面</text>`);
+  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">横轴 ${unit}</text>`);
+  if (!items.length) { el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.innerHTML = g.join('') + `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#9caab4" font-size="12">无数据</text>`; return; }
+  const fmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
+  let vmax = 0;
+  for (const o of items) vmax = Math.max(vmax, Math.abs(o.tFocus), Math.abs(o.sFocus));
+  if (!(vmax > 0)) vmax = 1e-3;
+  vmax *= 1.15;
+  const xs = f => ml + (f / fmax) * pw;
+  const ys = v => mt + ph / 2 - (v / vmax) * (ph / 2);
+  for (let k = -2; k <= 2; k++) {
+    const y = ys(vmax * k / 2);
+    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(vmax * k / 2 * 1000).toFixed(0)}</text>`);
+  }
+  g.push(`<line x1="${ml}" y1="${ys(0).toFixed(1)}" x2="${ml + pw}" y2="${ys(0).toFixed(1)}" stroke="#6D7B86" stroke-width="1.2"/>`);
+  const nxt = 6;
+  for (let k = 0; k <= nxt; k++) {
+    const f = fmax * k / nxt, x = xs(f);
+    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(fmax < 5 ? 2 : 1)}</text>`);
+  }
+  g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  if (items.length >= 2) {
+    g.push(`<polyline points="${items.map(o => `${xs(Math.abs(o.field)).toFixed(1)},${ys(o.tFocus).toFixed(1)}`).join(' ')}" fill="none" stroke="#4cc2ff" stroke-width="2"/>`);
+    g.push(`<polyline points="${items.map(o => `${xs(Math.abs(o.field)).toFixed(1)},${ys(o.sFocus).toFixed(1)}`).join(' ')}" fill="none" stroke="#ff9f43" stroke-width="2" stroke-dasharray="5 3"/>`);
+  }
+  for (const o of items) {
+    g.push(`<circle cx="${xs(Math.abs(o.field)).toFixed(1)}" cy="${ys(o.tFocus).toFixed(1)}" r="1.8" fill="#4cc2ff"/>`);
+    g.push(`<circle cx="${xs(Math.abs(o.field)).toFixed(1)}" cy="${ys(o.sFocus).toFixed(1)}" r="1.8" fill="#ff9f43"/>`);
+  }
+  const ly = H - 30;
+  g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#4cc2ff" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">子午 T (εy)</text>`);
+  g.push(`<line x1="${ml + 150}" y1="${ly}" x2="${ml + 172}" y2="${ly}" stroke="#ff9f43" stroke-width="2" stroke-dasharray="5 3"/><text x="${ml + 178}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">弧矢 S (εx)</text>`);
+  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">纵轴 = 相对像面的最佳焦移 μm (+=朝物方) · 在 ±扫描范围内取光扇 RMS 最小</text>`);
+  el.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  el.innerHTML = g.join('');
+}
+function renderAberDistSVG(el, res, mode) {
+  const W = 620, H = 360, ml = 74, mr = 26, mt = 44, mb = 78;
+  const pw = W - ml - mr, ph = H - mt - mb;
+  const items = (res.items || []).filter(o => o.ok && isFinite(o.dist));
+  const g = [];
+  const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
+  g.push(`<text x="${ml - 46}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">畸变 · 面： 像面</text>`);
+  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">横轴 ${unit} · 纵轴 %</text>`);
+  if (!items.length) { el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.innerHTML = g.join('') + `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#9caab4" font-size="12">无数据</text>`; return; }
+  const fmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
+  let vmax = 0;
+  for (const o of items) vmax = Math.max(vmax, Math.abs(o.dist));
+  if (!(vmax > 0)) vmax = 0.1;
+  vmax *= 1.2;
+  const xs = f => ml + (f / fmax) * pw;
+  const ys = v => mt + ph / 2 - (v / vmax) * (ph / 2);
+  for (let k = -2; k <= 2; k++) {
+    const y = ys(vmax * k / 2);
+    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(vmax * k / 2).toFixed(2)}</text>`);
+  }
+  g.push(`<line x1="${ml}" y1="${ys(0).toFixed(1)}" x2="${ml + pw}" y2="${ys(0).toFixed(1)}" stroke="#6D7B86" stroke-width="1.2"/>`);
+  const nxt = 6;
+  for (let k = 0; k <= nxt; k++) {
+    const f = fmax * k / nxt, x = xs(f);
+    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(fmax < 5 ? 2 : 1)}</text>`);
+  }
+  g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  if (items.length >= 2) g.push(`<polyline points="${items.map(o => `${xs(Math.abs(o.field)).toFixed(1)},${ys(o.dist).toFixed(1)}`).join(' ')}" fill="none" stroke="#3ddc97" stroke-width="2"/>`);
+  for (const o of items) g.push(`<circle cx="${xs(Math.abs(o.field)).toFixed(1)}" cy="${ys(o.dist).toFixed(1)}" r="1.8" fill="#3ddc97"/>`);
+  const ly = H - 30;
+  g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#3ddc97" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">畸变 (实际−EFL·tanθ)/EFL·tanθ ×100%</text>`);
+  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">负=桶形, 正=枕形 · EFL=${(res.efl || 0).toFixed(2)}mm</text>`);
+  el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }
 
@@ -1003,6 +1190,7 @@ function refreshActivePanel() {
   const run = () => {
     if (illumView && illumView.classList.contains('on')) { populateIllumSelects(); updateIllum(); }
     else if (mtfView && mtfView.classList.contains('on')) { populateMtfSelects(); updateMtf(); }
+    else if (aberView && aberView.classList.contains('on')) { populateAberSelects(); updateAber(); }
   };
   if (_panelTimer) clearTimeout(_panelTimer);
   _panelTimer = setTimeout(run, 30);
@@ -1125,6 +1313,7 @@ if (tabLayout) tabLayout.addEventListener('click', () => setPanelTab('layout'));
 if (tabSpot) tabSpot.addEventListener('click', () => { populateSpotSelects(); setPanelTab('spot'); });
 if (tabIllum) tabIllum.addEventListener('click', () => { populateIllumSelects(); setPanelTab('illum'); });
 if (tabMtf) tabMtf.addEventListener('click', () => { populateMtfSelects(); setPanelTab('mtf'); });
+if (tabAber) tabAber.addEventListener('click', () => { populateAberSelects(); setPanelTab('aber'); });
 for (const el of [spotGrid, spotField, spotWavelength, spotAiry]) {
   if (el) el.addEventListener('input', () => updateSpot());
 }
@@ -1135,6 +1324,10 @@ for (const el of [illumGrid, illumN, illumWavelength]) {
 for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength, mtfMode, mtfFocusRange]) {
   if (el) el.addEventListener('input', () => updateMtf());
   if (el) el.addEventListener('change', () => updateMtf());
+}
+for (const el of [aberType, aberField, aberGrid, aberRange, aberWavelength]) {
+  if (el) el.addEventListener('input', () => updateAber());
+  if (el) el.addEventListener('change', () => updateAber());
 }
 // 离焦单位切换：换算「范围」数值并刷新
 if (mtfFocusUnit) mtfFocusUnit.addEventListener('change', () => {

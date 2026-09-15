@@ -136,7 +136,7 @@ select:hover { border-color: var(--accent); }
 .panel-head .tab.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 .spotView { position: absolute; inset: 0; display: none; flex-direction: column; background: var(--bg); }
 .spotView.on { display: flex; }
-#spotMain, #illumMain, #mtfMain { flex: 1 1 0; width: 100%; height: 100%; display: block; }
+#spotMain, #illumMain, #mtfMain, #aberMain { flex: 1 1 0; width: 100%; height: 100%; display: block; }
 #layout2d.hidden { display: none; }
 .spot-ctrl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 9px;
   border-bottom: 1px solid var(--line); font-size: 11.5px; color: var(--dim); background: var(--panel); }
