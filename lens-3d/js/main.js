@@ -6,7 +6,7 @@ import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, set
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.0';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront } from './trace.js?v=1.4.2';
-import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.3.4';
+import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
 const renderFo = document.getElementById('fo');

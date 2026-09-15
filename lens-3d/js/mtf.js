@@ -171,6 +171,31 @@ export function throughFocusFromPupil(re, im, N, R, nuC, nu, w20List) {
   return { T, S };
 }
 
+/* ---------- 单一频率的复 OTF（离散自相关，O(N²)、无 FFT，结果与 FFT 一致）----------
+   OTF(ν) = Σ P(ρ)·conj(P(ρ−s)) / Σ|P|²，s = ν/νC·2R（样本，可为小数）；
+   在相邻整数平移 m0 / m0+1 上算自相关后线性插值，与 FFT 的取样方式一致。
+   'T'=y 方向 / 'S'=x 方向。离焦扫描每步只需一个频率，用这个比"整幅 FFT 再取样"快数倍。 */
+export function otfAtNu(re, im, N, R, nuC, nu, axis = 'T') {
+  const s = nuC > 0 ? nu / nuC * 2 * R : 0;
+  const m0 = Math.floor(s), t = s - m0;
+  let ar = 0, ai = 0, br = 0, bi = 0, dc = 0;
+  const m1 = m0 + 1;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const k = j * N + i, pr = re[k], pi = im[k];
+    if (!pr && !pi) continue;
+    dc += pr * pr + pi * pi;
+    if (axis === 'T') {
+      const j0 = j - m0; if (j0 >= 0 && j0 < N) { const k2 = j0 * N + i, qr = re[k2], qi = im[k2]; ar += pr * qr + pi * qi; ai += pi * qr - pr * qi; }
+      const j1 = j - m1; if (j1 >= 0 && j1 < N) { const k2 = j1 * N + i, qr = re[k2], qi = im[k2]; br += pr * qr + pi * qi; bi += pi * qr - pr * qi; }
+    } else {
+      const i0 = i - m0; if (i0 >= 0 && i0 < N) { const k2 = j * N + i0, qr = re[k2], qi = im[k2]; ar += pr * qr + pi * qi; ai += pi * qr - pr * qi; }
+      const i1 = i - m1; if (i1 >= 0 && i1 < N) { const k2 = j * N + i1, qr = re[k2], qi = im[k2]; br += pr * qr + pi * qi; bi += pi * qr - pr * qi; }
+    }
+  }
+  const d = dc || 1;
+  return { re: (ar + (br - ar) * t) / d, im: (ai + (bi - ai) * t) / d };
+}
+
 /* ---------- 复色离焦（P2）：多波长按权重复数加权 ----------
    pupils = [{ re, im, N, R, nuC, weight, lambdaUm }]（各波长共用同一 OPD 参考球心）；
    nu: 评估频率(lp/mm)；dzUmList: 轴向离焦(µm)；fno: 工作F数。
@@ -178,26 +203,27 @@ export function throughFocusFromPupil(re, im, N, R, nuC, nu, w20List) {
    返回 { T:[], S:[] }。 */
 export function throughFocusMultiColor(pupils, nu, dzUmList, fno) {
   const T = [], S = [];
+  if (!pupils.length) return { T, S };
+  const N = pupils[0].N;
+  const rr = new Float64Array(N * N), ii = new Float64Array(N * N);   // 复用缓冲
   for (let q = 0; q < dzUmList.length; q++) {
     const dzMm = dzUmList[q] / 1000;
     let rT = 0, iT = 0, rS = 0, iS = 0, wsum = 0;
     for (const p of pupils) {
       const w = p.weight ?? 1;
       const w20 = defocusWaves(dzMm, fno, p.lambdaUm);
-      const N = p.N, R = p.R, o = N >> 1, R2 = R * R;
-      const rr = new Float64Array(N * N), ii = new Float64Array(N * N);
-      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-        const k = y * N + x, pr = p.re[k], pi = p.im[k];
+      const o = p.N >> 1, R2 = p.R * p.R;
+      rr.fill(0); ii.fill(0);
+      for (let y = 0; y < p.N; y++) for (let x = 0; x < p.N; x++) {
+        const k = y * p.N + x, pr = p.re[k], pi = p.im[k];
         if (!pr && !pi) continue;
         const dx = x - o, dy = y - o;
         const ph = 2 * Math.PI * w20 * (dx * dx + dy * dy) / R2;
         const cs = Math.cos(ph), sn = Math.sin(ph);
         rr[k] = pr * cs - pi * sn; ii[k] = pr * sn + pi * cs;
       }
-      const g = otfFromPupil(rr, ii, N);
-      const s = p.nuC > 0 ? nu / p.nuC : 0;
-      const cT = sampleOtfComplex(g, N, R, s, 'T');
-      const cS = sampleOtfComplex(g, N, R, s, 'S');
+      const cT = otfAtNu(rr, ii, p.N, p.R, p.nuC, nu, 'T');
+      const cS = otfAtNu(rr, ii, p.N, p.R, p.nuC, nu, 'S');
       rT += w * cT.re; iT += w * cT.im; rS += w * cS.re; iS += w * cS.im; wsum += w;
     }
     const d = wsum || 1;
