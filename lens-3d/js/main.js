@@ -612,20 +612,29 @@ function updateAber() {
   const wlList = wsel === 'all' ? wlAll : (wsel === 'primary' ? [pri] : wlAll.filter(w => String(w.nm) === wsel));
   const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
   const fsel = aberField?.value || 'all';
-  const fields = fsel === 'all' ? baseList : [+fsel];
   const lamPri = pri.nm / 1000;
   if (type === 'fan') {
+    const fields = fsel === 'all' ? baseList : [+fsel];
     const fans = fields.map(fv => ({
       field: fv,
       groups: wlList.map(w => ({ nm: w.nm, color: w.color || '#ffb300', fan: traceRayFan(sys, surfaceList, { mode, field: fv, lambdaUm: w.nm / 1000, nGrid }) })),
     }));
     renderAberFanSVG(aberMain, fans, wlList, mode, pri.nm);
-  } else if (type === 'field') {
-    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdas: wlList });
-    renderAberFieldSVG(aberMain, res, mode);
   } else {
+    // 场曲/畸变：0→最大视场均匀采样（否则只有设计视场几个点，曲线是折线）
+    let fields;
+    if (fsel === 'all') {
+      let fmax = Math.max(...baseList.map(Math.abs), 0);
+      if (!(fmax > 0)) fmax = (isFinite(sys.maxField) && sys.maxField > 0) ? sys.maxField : (mode === 'height' ? 10 : 20);
+      const nf = Math.max(9, Math.min(41, nGrid)) | 0;
+      const set = new Set();
+      for (let k = 0; k < nf; k++) set.add(fmax * k / (nf - 1));
+      for (const f of baseList) set.add(Math.abs(f));
+      fields = [...set].sort((a, b) => a - b);
+    } else fields = [+fsel];
     const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdas: wlList });
-    renderAberDistSVG(aberMain, res, mode);
+    if (type === 'field') renderAberFieldSVG(aberMain, res, mode);
+    else renderAberDistSVG(aberMain, res, mode);
   }
 }
 function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
