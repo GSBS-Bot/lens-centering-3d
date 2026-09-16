@@ -629,6 +629,7 @@ function updateAber() {
       const nf = Math.max(9, Math.min(41, nGrid)) | 0;
       const set = new Set();
       for (let k = 0; k < nf; k++) set.add(fmax * k / (nf - 1));
+      for (const t of [0.02, 0.05, 0.1, 0.2, 0.4, 0.7]) set.add(fmax * t);   // 近轴区加密，畸变曲线更顺
       for (const f of baseList) set.add(Math.abs(f));
       fields = [...set].sort((a, b) => a - b);
     } else fields = [+fsel];
@@ -744,7 +745,7 @@ function renderAberFieldSVG(el, res, mode) {
 function renderAberDistSVG(el, res, mode) {
   const W = 620, H = 384, ml = 66, mr = 24, mt = 44, mb = 66;
   const pw = W - ml - mr, ph = H - mt - mb;
-  const items = (res.items || []).filter(o => o.ok && o.perWl && Math.abs(o.field) > 1e-6 && o.perWl.some(p => p.ok && isFinite(p.dist)));
+  const items = (res.items || []).filter(o => o.ok && o.perWl && o.perWl.some(p => p.ok && isFinite(p.dist)));
   const wl = res.wl || [];
   const g = [];
   const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
