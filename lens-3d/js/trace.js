@@ -731,7 +731,7 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
     };
     const hitAt = (px, py, L) => {
       const rb = buildRay(px, py);
-      const tr = traceRay3(sys, surfaceList, rb.P0, rb.D0, L, false);
+      const tr = traceRay3(sys, surfaceList, rb.P0, rb.D0, L, true);   // 参考光线放开孔径(否则边缘光线被渐晕会出尖点)
       if (!(tr.ok && tr.imageX != null && tr.imageY != null)) return null;
       const D = tr.dir || [0, 0, 1], uz = Math.abs(D[2]) > 1e-12 ? D[2] : 1;
       return { x: tr.imageX, y: tr.imageY, ux: D[0] / uz, uy: D[1] / uz };
@@ -747,16 +747,16 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
         const ax = key === 'y' ? 'y' : 'x', ak = key === 'y' ? 'uy' : 'ux';
         const ref = key === 'y' ? ch.y : ch.x, refU = key === 'y' ? ch.uy : ch.ux;
         const du = e[ak] - refU;
-        if (Math.abs(du) < 1e-12) return 0;
+        if (Math.abs(du) < 1e-9) return null;              // 边缘光线近似平行 -> 无有效交点，剔除
         const z = (ref - e[ax]) / du;
-        return (isFinite(z) && Math.abs(z) < 1e5) ? z : 0;
+        return (isFinite(z) && Math.abs(z) < 1e4) ? z : null;
       };
-      const tz = [hitAt(0, 1, L), hitAt(0, -1, L)].filter(Boolean).map(e => chiefCross(e, 'y'));
-      const sz = [hitAt(1, 0, L), hitAt(-1, 0, L)].filter(Boolean).map(e => chiefCross(e, 'x'));
+      const tz = [hitAt(0, 1, L), hitAt(0, -1, L)].map(e => e && chiefCross(e, 'y')).filter(z => z !== null && z !== undefined);
+      const sz = [hitAt(1, 0, L), hitAt(-1, 0, L)].map(e => e && chiefCross(e, 'x')).filter(z => z !== null && z !== undefined);
+      const avg = arr => arr.length ? arr.reduce((a, b2) => a + b2, 0) / arr.length : 0;
       return {
         nm: wl.nm, color: wl.color, ok: true, realY: ch.y, idealY: hp, dist,
-        tFocus: tz.length ? tz.reduce((a, b2) => a + b2, 0) / tz.length : 0,
-        sFocus: sz.length ? sz.reduce((a, b2) => a + b2, 0) / sz.length : 0,
+        tFocus: avg(tz), sFocus: avg(sz),
       };
     });
     items.push({ field: fv, ok: true, theta: thetaDeg, perWl });
