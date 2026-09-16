@@ -744,7 +744,7 @@ function renderAberFieldSVG(el, res, mode) {
 function renderAberDistSVG(el, res, mode) {
   const W = 620, H = 384, ml = 66, mr = 24, mt = 44, mb = 66;
   const pw = W - ml - mr, ph = H - mt - mb;
-  const items = (res.items || []).filter(o => o.ok && o.perWl && o.perWl.some(p => p.ok && isFinite(p.dist)));
+  const items = (res.items || []).filter(o => o.ok && o.perWl && Math.abs(o.field) > 1e-6 && o.perWl.some(p => p.ok && isFinite(p.dist)));
   const wl = res.wl || [];
   const g = [];
   const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
