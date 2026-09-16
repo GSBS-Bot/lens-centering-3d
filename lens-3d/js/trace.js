@@ -740,10 +740,21 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
         let s = 0; for (const it of arr) { const v = at(it, key, dz) - ref; s += v * v; }
         return Math.sqrt(s / arr.length);
       };
+      const nZ2 = Math.max(nZ, 61);   // 细扫 + 抛物线顶点细化（避免焦移吸附到粗步长）
       const best = (arr, key) => {
-        let bz = 0, bv = Infinity;
-        for (let k = 0; k < nZ; k++) { const dz = -range + 2 * range * k / (nZ - 1); const v = rms(arr, key, dz); if (v < bv) { bv = v; bz = dz; } }
-        return bz;
+        let bi = 0, bv = Infinity;
+        const xs = [], vs = [];
+        for (let k = 0; k < nZ2; k++) {
+          const dz = -range + 2 * range * k / (nZ2 - 1);
+          const v = rms(arr, key, dz); xs.push(dz); vs.push(v);
+          if (v < bv) { bv = v; bi = k; }
+        }
+        let bz = xs[bi];
+        if (bi > 0 && bi < nZ2 - 1) {
+          const y0 = vs[bi - 1], y1 = vs[bi], y2 = vs[bi + 1], den = y0 - 2 * y1 + y2;
+          if (Math.abs(den) > 1e-15) bz = xs[bi] - 0.5 * (y2 - y0) / den * (xs[1] - xs[0]);
+        }
+        return Math.max(-range, Math.min(range, bz));
       };
       tFocus = best(merP, 'y'); sFocus = best(sagP, 'x');
     }
