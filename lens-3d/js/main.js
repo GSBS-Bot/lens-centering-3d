@@ -5,7 +5,7 @@ import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.0';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.4.8';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.4.9';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
@@ -50,7 +50,6 @@ const tabAber = document.getElementById('tabAber');
 const aberView = document.getElementById('aberView');
 const aberMain = document.getElementById('aberMain');
 const aberType = document.getElementById('aberType');
-const aberMethod = document.getElementById('aberMethod');
 const aberGrid = document.getElementById('aberGrid');
 const aberRange = document.getElementById('aberRange');
 const aberField = document.getElementById('aberField');
@@ -622,10 +621,10 @@ function updateAber() {
     }));
     renderAberFanSVG(aberMain, fans, wlList, mode, pri.nm);
   } else if (type === 'field') {
-    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, method: aberMethod?.value || 'zemax' });
+    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdas: wlList });
     renderAberFieldSVG(aberMain, res, mode);
   } else {
-    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, method: aberMethod?.value || 'zemax' });
+    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdas: wlList });
     renderAberDistSVG(aberMain, res, mode);
   }
 }
@@ -682,83 +681,99 @@ function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
   el.innerHTML = g.join('');
 }
 function renderAberFieldSVG(el, res, mode) {
-  const W = 620, H = 360, ml = 74, mr = 26, mt = 44, mb = 78;
+  const W = 620, H = 384, ml = 66, mr = 24, mt = 44, mb = 66;
   const pw = W - ml - mr, ph = H - mt - mb;
-  const items = (res.items || []).filter(o => o.ok);
+  const items = (res.items || []).filter(o => o.ok && o.perWl && o.perWl.some(p => p.ok));
+  const wl = res.wl || [];
   const g = [];
   const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
-  g.push(`<text x="${ml - 46}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">场曲 / 像散 · 面： 像面</text>`);
-  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">横轴 ${unit}</text>`);
+  g.push(`<text x="${ml - 48}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">场曲 / 像散 · 面： 像面</text>`);
+  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">纵轴 视场 ${unit}</text>`);
   if (!items.length) { el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.innerHTML = g.join('') + `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#9caab4" font-size="12">无数据</text>`; return; }
-  const fmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
-  let vmax = 0;
-  for (const o of items) vmax = Math.max(vmax, Math.abs(o.tFocus), Math.abs(o.sFocus));
-  if (!(vmax > 0)) vmax = 1e-3;
-  vmax *= 1.15;
-  const xs = f => ml + (f / fmax) * pw;
-  const ys = v => mt + ph / 2 - (v / vmax) * (ph / 2);
+  const vmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
+  let fmax = 0;
+  for (const o of items) for (const p of o.perWl) if (p.ok) fmax = Math.max(fmax, Math.abs(p.tFocus), Math.abs(p.sFocus));
+  if (!(fmax > 0)) fmax = 1e-4;
+  fmax *= 1.12;
+  const xs = v => ml + pw / 2 + (v / fmax) * (pw / 2);
+  const ys = f => mt + ph - (f / vmax) * ph;
   for (let k = -2; k <= 2; k++) {
-    const y = ys(vmax * k / 2);
-    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(vmax * k / 2 * 1000).toFixed(0)}</text>`);
-  }
-  g.push(`<line x1="${ml}" y1="${ys(0).toFixed(1)}" x2="${ml + pw}" y2="${ys(0).toFixed(1)}" stroke="#6D7B86" stroke-width="1.2"/>`);
-  const nxt = 6;
-  for (let k = 0; k <= nxt; k++) {
-    const f = fmax * k / nxt, x = xs(f);
+    const x = xs(fmax * k / 2);
     g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(fmax < 5 ? 2 : 1)}</text>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(fmax * k / 2 * 1000).toFixed(0)}</text>`);
   }
+  for (let k = 0; k <= 4; k++) {
+    const f = vmax * k / 4, y = ys(f);
+    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(vmax < 5 ? 2 : 1)}</text>`);
+  }
+  g.push(`<line x1="${xs(0).toFixed(1)}" y1="${mt}" x2="${xs(0).toFixed(1)}" y2="${mt + ph}" stroke="#6D7B86" stroke-width="1.2"/>`);
   g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
-  if (items.length >= 2) {
-    g.push(`<polyline points="${items.map(o => `${xs(Math.abs(o.field)).toFixed(1)},${ys(o.tFocus).toFixed(1)}`).join(' ')}" fill="none" stroke="#4cc2ff" stroke-width="2"/>`);
-    g.push(`<polyline points="${items.map(o => `${xs(Math.abs(o.field)).toFixed(1)},${ys(o.sFocus).toFixed(1)}`).join(' ')}" fill="none" stroke="#ff9f43" stroke-width="2" stroke-dasharray="5 3"/>`);
+  for (const w of wl) {
+    const T = [], S = [];
+    for (const o of items) {
+      const p = o.perWl.find(q => q.nm === w.nm && q.ok);
+      if (!p) continue;
+      T.push(`${xs(p.tFocus).toFixed(1)},${ys(Math.abs(o.field)).toFixed(1)}`);
+      S.push(`${xs(p.sFocus).toFixed(1)},${ys(Math.abs(o.field)).toFixed(1)}`);
+    }
+    const col = adaptHexStr(w.color);
+    if (T.length >= 2) g.push(`<polyline points="${T.join(' ')}" fill="none" stroke="${col}" stroke-width="1.8"/>`);
+    if (S.length >= 2) g.push(`<polyline points="${S.join(' ')}" fill="none" stroke="${col}" stroke-width="1.8" stroke-dasharray="5 3"/>`);
   }
-  for (const o of items) {
-    g.push(`<circle cx="${xs(Math.abs(o.field)).toFixed(1)}" cy="${ys(o.tFocus).toFixed(1)}" r="1.8" fill="#4cc2ff"/>`);
-    g.push(`<circle cx="${xs(Math.abs(o.field)).toFixed(1)}" cy="${ys(o.sFocus).toFixed(1)}" r="1.8" fill="#ff9f43"/>`);
+  const ly = H - 20;
+  let lx = ml;
+  for (const w of wl) {
+    g.push(`<line x1="${lx}" y1="${ly - 4}" x2="${lx + 15}" y2="${ly - 4}" stroke="${adaptHexStr(w.color)}" stroke-width="1.8"/><line x1="${lx}" y1="${ly + 5}" x2="${lx + 15}" y2="${ly + 5}" stroke="${adaptHexStr(w.color)}" stroke-width="1.8" stroke-dasharray="4 2"/>`);
+    g.push(`<text x="${lx + 19}" y="${ly + 3}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${w.nm.toFixed(1)}</text>`);
+    lx += 88;
   }
-  const ly = H - 30;
-  g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#4cc2ff" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">子午 T (εy)</text>`);
-  g.push(`<line x1="${ml + 150}" y1="${ly}" x2="${ml + 172}" y2="${ly}" stroke="#ff9f43" stroke-width="2" stroke-dasharray="5 3"/><text x="${ml + 178}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">弧矢 S (εx)</text>`);
-  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">纵轴 = 场曲(相对像面的轴向焦移) μm (+=朝物方) · 口径：${res.method === 'friend' ? '友站式(±δ 实光线交点)' : 'Zemax式(边缘×主光线)'}</text>`);
+  g.push(`<text x="${lx + 2}" y="${ly + 3}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">实线=子午T 虚线=弧矢S · 横轴 μm · 边缘×主光线交点</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }
 function renderAberDistSVG(el, res, mode) {
-  const W = 620, H = 360, ml = 74, mr = 26, mt = 44, mb = 78;
+  const W = 620, H = 384, ml = 66, mr = 24, mt = 44, mb = 66;
   const pw = W - ml - mr, ph = H - mt - mb;
-  const items = (res.items || []).filter(o => o.ok && isFinite(o.dist));
+  const items = (res.items || []).filter(o => o.ok && o.perWl && o.perWl.some(p => p.ok && isFinite(p.dist)));
+  const wl = res.wl || [];
   const g = [];
   const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
-  g.push(`<text x="${ml - 46}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">畸变 · 面： 像面</text>`);
-  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">横轴 ${unit} · 纵轴 %</text>`);
+  g.push(`<text x="${ml - 48}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">畸变 F-Tan(Theta) · 面： 像面</text>`);
+  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">纵轴 视场 ${unit}</text>`);
   if (!items.length) { el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.innerHTML = g.join('') + `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#9caab4" font-size="12">无数据</text>`; return; }
-  const fmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
-  let vmax = 0;
-  for (const o of items) vmax = Math.max(vmax, Math.abs(o.dist));
-  if (!(vmax > 0)) vmax = 0.1;
-  vmax *= 1.2;
-  const xs = f => ml + (f / fmax) * pw;
-  const ys = v => mt + ph / 2 - (v / vmax) * (ph / 2);
+  const vmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
+  let dmax = 0;
+  for (const o of items) for (const p of o.perWl) if (p.ok && isFinite(p.dist)) dmax = Math.max(dmax, Math.abs(p.dist));
+  if (!(dmax > 0)) dmax = 0.5;
+  dmax *= 1.2;
+  const xs = v => ml + pw / 2 + (v / dmax) * (pw / 2);
+  const ys = f => mt + ph - (f / vmax) * ph;
   for (let k = -2; k <= 2; k++) {
-    const y = ys(vmax * k / 2);
-    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(vmax * k / 2).toFixed(2)}</text>`);
-  }
-  g.push(`<line x1="${ml}" y1="${ys(0).toFixed(1)}" x2="${ml + pw}" y2="${ys(0).toFixed(1)}" stroke="#6D7B86" stroke-width="1.2"/>`);
-  const nxt = 6;
-  for (let k = 0; k <= nxt; k++) {
-    const f = fmax * k / nxt, x = xs(f);
+    const x = xs(dmax * k / 2);
     g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(fmax < 5 ? 2 : 1)}</text>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(dmax * k / 2).toFixed(2)}</text>`);
   }
+  for (let k = 0; k <= 4; k++) {
+    const f = vmax * k / 4, y = ys(f);
+    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(vmax < 5 ? 2 : 1)}</text>`);
+  }
+  g.push(`<line x1="${xs(0).toFixed(1)}" y1="${mt}" x2="${xs(0).toFixed(1)}" y2="${mt + ph}" stroke="#6D7B86" stroke-width="1.2"/>`);
   g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
-  if (items.length >= 2) g.push(`<polyline points="${items.map(o => `${xs(Math.abs(o.field)).toFixed(1)},${ys(o.dist).toFixed(1)}`).join(' ')}" fill="none" stroke="#3ddc97" stroke-width="2"/>`);
-  for (const o of items) g.push(`<circle cx="${xs(Math.abs(o.field)).toFixed(1)}" cy="${ys(o.dist).toFixed(1)}" r="1.8" fill="#3ddc97"/>`);
-  const ly = H - 30;
-  g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#3ddc97" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">畸变 (实际−EFL·tanθ)/EFL·tanθ ×100%</text>`);
-  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">负=桶形, 正=枕形 · 参考=近轴主光像高 · EFL=${(res.efl || 0).toFixed(2)}mm</text>`);
+  for (const w of wl) {
+    const C = [];
+    for (const o of items) { const p = o.perWl.find(q => q.nm === w.nm && q.ok); if (p) C.push(`${xs(p.dist).toFixed(1)},${ys(Math.abs(o.field)).toFixed(1)}`); }
+    if (C.length >= 2) g.push(`<polyline points="${C.join(' ')}" fill="none" stroke="${adaptHexStr(w.color)}" stroke-width="1.8"/>`);
+  }
+  const ly = H - 20;
+  let lx = ml;
+  for (const w of wl) {
+    g.push(`<line x1="${lx}" y1="${ly + 1}" x2="${lx + 15}" y2="${ly + 1}" stroke="${adaptHexStr(w.color)}" stroke-width="1.8"/>`);
+    g.push(`<text x="${lx + 19}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${w.nm.toFixed(1)}</text>`);
+    lx += 88;
+  }
+  g.push(`<text x="${lx + 2}" y="${ly + 4}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">横轴 % · 负=桶形 正=枕形 · 参考=近轴主光像高 · EFL=${(res.efl || 0).toFixed(2)}mm</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }
@@ -1325,7 +1340,7 @@ for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength, mtfMode, mtf
   if (el) el.addEventListener('input', () => updateMtf());
   if (el) el.addEventListener('change', () => updateMtf());
 }
-for (const el of [aberType, aberMethod, aberField, aberGrid, aberRange, aberWavelength]) {
+for (const el of [aberType, aberField, aberGrid, aberRange, aberWavelength]) {
   if (el) el.addEventListener('input', () => updateAber());
   if (el) el.addEventListener('change', () => updateAber());
 }

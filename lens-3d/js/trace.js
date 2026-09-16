@@ -701,23 +701,20 @@ function paraxChiefHeight(sys, surfaceList, thetaDeg, lam, zEP) {
   return y;
 }
 
-// ---- 场曲/像散 + 畸变：逐视场求 主光线像高(畸变) 与 子午 T / 弧矢 S 焦移 ----
+// ---- 场曲/像散 + 畸变：逐视场、逐波长 求 主光线像高(畸变) 与 子午 T / 弧矢 S 焦移 ----
 // 场角：角度模式=场值；高度模式按【近轴像高】反推 θ=atan(h/EFL)（与 Zemax 场定义一致）。
 // 畸变% = (|实像高| − |近轴主光像高|)/|近轴主光像高| ×100（近轴值由 paraxChiefHeight 追迹）。
-// 口径 method：
-//   'friend' 友站式 —— T: 主光线±δ(2%瞳半径)两条子午光线的交点；S: +δ 弧矢光线与 x=0 的交点
-//   'zemax'  Zemax式 —— T/S: 边缘光线(py/px=±1)与主光线的轴向交点
+// 场曲 Z 式：T/S = 边缘光线(py/px=±1)与主光线的轴向交点。每波长各算一组（Zemax 场曲图按波长分色）。
 export function fieldAberrations(sys, surfaceList, cfg = {}) {
-  const lam = cfg.lambdaUm ?? LAM_D;
   const mode = cfg.mode === 'height' ? 'height' : 'angle';
-  const method = cfg.method === 'friend' ? 'friend' : 'zemax';
+  const lambdas = (cfg.lambdas && cfg.lambdas.length) ? cfg.lambdas
+    : [{ nm: (cfg.lambdaUm ?? LAM_D) * 1000, color: '#ffb300' }];
   const list = (cfg.fields && cfg.fields.length) ? cfg.fields : [0];
-  const fo = firstOrder(sys, surfaceList, lam);
-  const efl = fo ? fo.efl : 0;
+  const efl = (firstOrder(sys, surfaceList, lambdas[0].nm / 1000) || {}).efl || 0;
   const items = [];
   for (const fv of list) {
     const thetaDeg = (mode === 'height') ? Math.atan(fv / (Math.abs(efl) > 1e-9 ? efl : 1)) * 180 / Math.PI : fv;
-    const b = traceFieldBundle(sys, surfaceList, { mode: 'angle', field: thetaDeg, nPupil: 1, lambdaUm: lam });
+    const b = traceFieldBundle(sys, surfaceList, { mode: 'angle', field: thetaDeg, nPupil: 1, lambdaUm: lambdas[0].nm / 1000 });
     const c = b.chief;
     if (!c) { items.push({ field: fv, ok: false }); continue; }
     const finite = c._finite;
@@ -732,42 +729,39 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
       }
       return { P0: [px * epd / 2, param + py * epd / 2, zStart], D0: [0, Math.sin(ang), Math.cos(ang)] };
     };
-    const hit = (px, py) => {
+    const hitAt = (px, py, L) => {
       const rb = buildRay(px, py);
-      const tr = traceRay3(sys, surfaceList, rb.P0, rb.D0, lam, false);
+      const tr = traceRay3(sys, surfaceList, rb.P0, rb.D0, L, false);
       if (!(tr.ok && tr.imageX != null && tr.imageY != null)) return null;
       const D = tr.dir || [0, 0, 1], uz = Math.abs(D[2]) > 1e-12 ? D[2] : 1;
       return { x: tr.imageX, y: tr.imageY, ux: D[0] / uz, uy: D[1] / uz };
     };
-    const ch = hit(0, 0);
-    if (!ch) { items.push({ field: fv, ok: false }); continue; }
-    const hp = paraxChiefHeight(sys, surfaceList, thetaDeg, lam, zEP);
-    const refH = Math.abs(hp) > 1e-9 ? Math.abs(hp) : (mode === 'height' ? Math.abs(fv) : Math.abs(efl * Math.tan(ang)));
-    const dist = refH > 1e-9 ? (Math.abs(ch.y) - Math.abs(hp)) / refH * 100 : 0;
-    // 一条光线与主光线在 (轴向) 上的交点 z
-    const chiefCross = (e, key) => {
-      const ax = key === 'y' ? 'y' : 'x', ak = key === 'y' ? 'uy' : 'ux';
-      const ref = key === 'y' ? ch.y : ch.x, refU = key === 'y' ? ch.uy : ch.ux;
-      const du = e[ak] - refU;
-      if (Math.abs(du) < 1e-12) return 0;
-      const z = (ref - e[ax]) / du;
-      return (isFinite(z) && Math.abs(z) < 1e5) ? z : 0;
-    };
-    let tFocus = 0, sFocus = 0;
-    if (method === 'friend') {
-      const d = 0.02;                                   // 2% 瞳半径 = 友站的 δ
-      const ru = hit(0, d), rd = hit(0, -d), rs = hit(d, 0);
-      if (ru && rd) { const du = ru.uy - rd.uy; if (Math.abs(du) > 1e-12) tFocus = (rd.y - ru.y) / du; }
-      if (rs && Math.abs(rs.ux) > 1e-12) sFocus = -rs.x / rs.ux;
-    } else {
-      const tz = [hit(0, 1), hit(0, -1)].filter(Boolean).map(e => chiefCross(e, 'y'));
-      const sz = [hit(1, 0), hit(-1, 0)].filter(Boolean).map(e => chiefCross(e, 'x'));
-      tFocus = tz.length ? tz.reduce((a, b) => a + b, 0) / tz.length : 0;
-      sFocus = sz.length ? sz.reduce((a, b) => a + b, 0) / sz.length : 0;
-    }
-    items.push({ field: fv, ok: true, theta: thetaDeg, realY: ch.y, realX: ch.x, idealY: hp, dist, tFocus, sFocus });
+    const perWl = lambdas.map(wl => {
+      const L = wl.nm / 1000;
+      const ch = hitAt(0, 0, L);
+      if (!ch) return { nm: wl.nm, color: wl.color, ok: false };
+      const hp = paraxChiefHeight(sys, surfaceList, thetaDeg, L, zEP);
+      const refH = Math.abs(hp) > 1e-9 ? Math.abs(hp) : (mode === 'height' ? Math.abs(fv) : Math.abs(efl * Math.tan(ang)));
+      const dist = refH > 1e-9 ? (Math.abs(ch.y) - Math.abs(hp)) / refH * 100 : 0;
+      const chiefCross = (e, key) => {
+        const ax = key === 'y' ? 'y' : 'x', ak = key === 'y' ? 'uy' : 'ux';
+        const ref = key === 'y' ? ch.y : ch.x, refU = key === 'y' ? ch.uy : ch.ux;
+        const du = e[ak] - refU;
+        if (Math.abs(du) < 1e-12) return 0;
+        const z = (ref - e[ax]) / du;
+        return (isFinite(z) && Math.abs(z) < 1e5) ? z : 0;
+      };
+      const tz = [hitAt(0, 1, L), hitAt(0, -1, L)].filter(Boolean).map(e => chiefCross(e, 'y'));
+      const sz = [hitAt(1, 0, L), hitAt(-1, 0, L)].filter(Boolean).map(e => chiefCross(e, 'x'));
+      return {
+        nm: wl.nm, color: wl.color, ok: true, realY: ch.y, idealY: hp, dist,
+        tFocus: tz.length ? tz.reduce((a, b2) => a + b2, 0) / tz.length : 0,
+        sFocus: sz.length ? sz.reduce((a, b2) => a + b2, 0) / sz.length : 0,
+      };
+    });
+    items.push({ field: fv, ok: true, theta: thetaDeg, perWl });
   }
-  return { mode, method, efl, items };
+  return { mode, efl, wl: lambdas.map(w => ({ nm: w.nm, color: w.color })), items };
 }
 
 // ---- 相对照度（一维）------------------------------------------------------
