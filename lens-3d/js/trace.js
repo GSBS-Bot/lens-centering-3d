@@ -713,7 +713,7 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
   const efl = (firstOrder(sys, surfaceList, lambdas[0].nm / 1000) || {}).efl || 0;
   // 近轴倍率(逐波长)：用极小视场(0.001mm)实追迹主光线得到"近轴像高/视场"之比。
   // 近轴参考像高 = (EFL·tanθ) × 倍率；高度模式下 EFL·tanθ 即视场值，故参考≈近轴实像高，近轴区畸变≈0，曲线平滑。
-  const tinyH = 0.001;
+  const tinyH = 0.1;
   const scales = lambdas.map(wl => {
     const L = wl.nm / 1000;
     const thT = Math.atan(tinyH / (Math.abs(efl) > 1e-9 ? efl : 1)) * 180 / Math.PI;
