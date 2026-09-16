@@ -683,22 +683,39 @@ export function traceRayFan(sys, surfaceList, cfg = {}) {
   return { field: fv, mode, mer, sag, ok: true, epd, chiefX: cx, chiefY: cy };
 }
 
-// ---- 场曲/像散 + 畸变：逐视场求 主光线像高(畸变) 与 子午/弧矢最佳焦移(mm) ----
-// 理想像高：角度模式 = EFL·tanθ；像高模式 = 场值 h。畸变% = (实际-理想)/理想×100。
-// 场曲：在 ±range(mm) 内扫离焦，取子午/弧矢光扇相对主光线 RMS 最小时的焦移(+z=朝物方)。
+// ---- 近轴主光线像高：主光线(过入瞳中心)的近轴追迹（与 Zemax「参考高度」一致）----
+function paraxChiefHeight(sys, surfaceList, thetaDeg, lam, zEP) {
+  const S = opticalSurfaces(sys, surfaceList);
+  if (!S.length) return 0;
+  const u0 = Math.tan(thetaDeg * Math.PI / 180);
+  let u = u0, y = -u0 * (zEP || 0), n = indexOf(sys.surfaces[0]?.glass, lam);
+  for (let k = 0; k < S.length; k++) {
+    const i = S[k].i;
+    const R = sys.surfaces[i].radius;
+    const c = (R && isFinite(R) && R !== 0) ? 1 / R : 0;
+    const n2 = indexOf(sys.surfaces[i].glass, lam);
+    u = (n * u - y * c * (n2 - n)) / n2; n = n2;
+    const t = (k < S.length - 1) ? (S[k + 1].z - S[k].z) : (0 - S[k].z);
+    y += u * t;
+  }
+  return y;
+}
+
+// ---- 场曲/像散 + 畸变：逐视场求 主光线像高(畸变) 与 子午 T / 弧矢 S 焦移 ----
+// 场角：角度模式=场值；高度模式按【近轴像高】反推 θ=atan(h/EFL)（与 Zemax 场定义一致）。
+// 畸变% = (|实像高| − |近轴主光像高|)/|近轴主光像高| ×100（近轴值由 paraxChiefHeight 追迹）。
+// 口径 method：
+//   'friend' 友站式 —— T: 主光线±δ(2%瞳半径)两条子午光线的交点；S: +δ 弧矢光线与 x=0 的交点
+//   'zemax'  Zemax式 —— T/S: 边缘光线(py/px=±1)与主光线的轴向交点
 export function fieldAberrations(sys, surfaceList, cfg = {}) {
   const lam = cfg.lambdaUm ?? LAM_D;
   const mode = cfg.mode === 'height' ? 'height' : 'angle';
+  const method = cfg.method === 'friend' ? 'friend' : 'zemax';
   const list = (cfg.fields && cfg.fields.length) ? cfg.fields : [0];
-  const nP = Math.max(3, Math.min(21, cfg.nPupil ?? 9)) | 0;
-  const nZ = Math.max(3, Math.min(41, cfg.nDefocus ?? 21)) | 0;
-  const range = cfg.range ?? 0;
-  const S = opticalSurfaces(sys, surfaceList);
   const fo = firstOrder(sys, surfaceList, lam);
   const efl = fo ? fo.efl : 0;
   const items = [];
   for (const fv of list) {
-    // 场角：角度模式=场值；高度模式按【近轴像高】反推 θ=atan(h/EFL)（与 Zemax 场定义一致：real height ≠ field）。
     const thetaDeg = (mode === 'height') ? Math.atan(fv / (Math.abs(efl) > 1e-9 ? efl : 1)) * 180 / Math.PI : fv;
     const b = traceFieldBundle(sys, surfaceList, { mode: 'angle', field: thetaDeg, nPupil: 1, lambdaUm: lam });
     const c = b.chief;
@@ -724,27 +741,33 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
     };
     const ch = hit(0, 0);
     if (!ch) { items.push({ field: fv, ok: false }); continue; }
-    // 畸变：参考像高 = 近轴像高（高度模式=场值；角度模式=EFL·tanθ）。F-Tan(Theta)，负=桶形。
-    const idealY = (mode === 'height') ? fv : efl * Math.tan(ang);
-    const dist = Math.abs(idealY) > 1e-9 ? (ch.y - idealY) / idealY * 100 : 0;
-    // 场曲/像散：子午/弧矢【边缘光线(±1)与主光线的轴向交点】(Zemax 式)。+=朝物方。
-    const mer = nP >= 3 ? [hit(0, 1), hit(0, -1)].filter(Boolean) : [];
-    const sag = nP >= 3 ? [hit(1, 0), hit(-1, 0)].filter(Boolean) : [];
-    const edgeCross = (arr, key) => {
-      const ax = (key === 'y') ? 'y' : 'x', ak = (key === 'y') ? 'uy' : 'ux';
-      const ref = (key === 'y') ? ch.y : ch.x, refU = (key === 'y') ? ch.uy : ch.ux;
-      if (!arr.length) return 0;
-      let sum = 0, n = 0;
-      for (const e of arr) {
-        const du = e[ak] - refU;
-        if (Math.abs(du) > 1e-12) { const z = (ref - e[ax]) / du; if (isFinite(z) && Math.abs(z) < 1e5) { sum += z; n++; } }
-      }
-      return n ? sum / n : 0;
+    const hp = paraxChiefHeight(sys, surfaceList, thetaDeg, lam, zEP);
+    const refH = Math.abs(hp) > 1e-9 ? Math.abs(hp) : (mode === 'height' ? Math.abs(fv) : Math.abs(efl * Math.tan(ang)));
+    const dist = refH > 1e-9 ? (Math.abs(ch.y) - Math.abs(hp)) / refH * 100 : 0;
+    // 一条光线与主光线在 (轴向) 上的交点 z
+    const chiefCross = (e, key) => {
+      const ax = key === 'y' ? 'y' : 'x', ak = key === 'y' ? 'uy' : 'ux';
+      const ref = key === 'y' ? ch.y : ch.x, refU = key === 'y' ? ch.uy : ch.ux;
+      const du = e[ak] - refU;
+      if (Math.abs(du) < 1e-12) return 0;
+      const z = (ref - e[ax]) / du;
+      return (isFinite(z) && Math.abs(z) < 1e5) ? z : 0;
     };
-    const tFocus = edgeCross(mer, 'y'), sFocus = edgeCross(sag, 'x');
-    items.push({ field: fv, ok: true, theta: thetaDeg, realY: ch.y, realX: ch.x, idealY, dist, tFocus, sFocus });
+    let tFocus = 0, sFocus = 0;
+    if (method === 'friend') {
+      const d = 0.02;                                   // 2% 瞳半径 = 友站的 δ
+      const ru = hit(0, d), rd = hit(0, -d), rs = hit(d, 0);
+      if (ru && rd) { const du = ru.uy - rd.uy; if (Math.abs(du) > 1e-12) tFocus = (rd.y - ru.y) / du; }
+      if (rs && Math.abs(rs.ux) > 1e-12) sFocus = -rs.x / rs.ux;
+    } else {
+      const tz = [hit(0, 1), hit(0, -1)].filter(Boolean).map(e => chiefCross(e, 'y'));
+      const sz = [hit(1, 0), hit(-1, 0)].filter(Boolean).map(e => chiefCross(e, 'x'));
+      tFocus = tz.length ? tz.reduce((a, b) => a + b, 0) / tz.length : 0;
+      sFocus = sz.length ? sz.reduce((a, b) => a + b, 0) / sz.length : 0;
+    }
+    items.push({ field: fv, ok: true, theta: thetaDeg, realY: ch.y, realX: ch.x, idealY: hp, dist, tFocus, sFocus });
   }
-  return { mode, efl, nPupil: nP, items };
+  return { mode, method, efl, items };
 }
 
 // ---- 相对照度（一维）------------------------------------------------------

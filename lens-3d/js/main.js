@@ -5,7 +5,7 @@ import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.0';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.4.7';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.4.8';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
@@ -50,6 +50,7 @@ const tabAber = document.getElementById('tabAber');
 const aberView = document.getElementById('aberView');
 const aberMain = document.getElementById('aberMain');
 const aberType = document.getElementById('aberType');
+const aberMethod = document.getElementById('aberMethod');
 const aberGrid = document.getElementById('aberGrid');
 const aberRange = document.getElementById('aberRange');
 const aberField = document.getElementById('aberField');
@@ -621,11 +622,10 @@ function updateAber() {
     }));
     renderAberFanSVG(aberMain, fans, wlList, mode, pri.nm);
   } else if (type === 'field') {
-    const range = Math.max(0, parseFloat(aberRange?.value) || 0.5);
-    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, nPupil: Math.min(15, Math.max(5, nGrid)), nDefocus: 21, range });
+    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, method: aberMethod?.value || 'zemax' });
     renderAberFieldSVG(aberMain, res, mode);
   } else {
-    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, nPupil: 5, nDefocus: 3, range: 0 });
+    const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdaUm: lamPri, method: aberMethod?.value || 'zemax' });
     renderAberDistSVG(aberMain, res, mode);
   }
 }
@@ -721,7 +721,7 @@ function renderAberFieldSVG(el, res, mode) {
   const ly = H - 30;
   g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#4cc2ff" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">子午 T (εy)</text>`);
   g.push(`<line x1="${ml + 150}" y1="${ly}" x2="${ml + 172}" y2="${ly}" stroke="#ff9f43" stroke-width="2" stroke-dasharray="5 3"/><text x="${ml + 178}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">弧矢 S (εx)</text>`);
-  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">纵轴 = 场曲(相对像面的轴向焦移) μm (+=朝物方) · 边缘光线与主光线轴向交点 (Zemax 式)</text>`);
+  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">纵轴 = 场曲(相对像面的轴向焦移) μm (+=朝物方) · 口径：${res.method === 'friend' ? '友站式(±δ 实光线交点)' : 'Zemax式(边缘×主光线)'}</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }
@@ -758,7 +758,7 @@ function renderAberDistSVG(el, res, mode) {
   for (const o of items) g.push(`<circle cx="${xs(Math.abs(o.field)).toFixed(1)}" cy="${ys(o.dist).toFixed(1)}" r="1.8" fill="#3ddc97"/>`);
   const ly = H - 30;
   g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#3ddc97" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">畸变 (实际−EFL·tanθ)/EFL·tanθ ×100%</text>`);
-  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">负=桶形, 正=枕形 · EFL=${(res.efl || 0).toFixed(2)}mm</text>`);
+  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">负=桶形, 正=枕形 · 参考=近轴主光像高 · EFL=${(res.efl || 0).toFixed(2)}mm</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }
@@ -1325,7 +1325,7 @@ for (const el of [mtfAlgo, mtfField, mtfGrid, mtfNu, mtfWavelength, mtfMode, mtf
   if (el) el.addEventListener('input', () => updateMtf());
   if (el) el.addEventListener('change', () => updateMtf());
 }
-for (const el of [aberType, aberField, aberGrid, aberRange, aberWavelength]) {
+for (const el of [aberType, aberMethod, aberField, aberGrid, aberRange, aberWavelength]) {
   if (el) el.addEventListener('input', () => updateAber());
   if (el) el.addEventListener('change', () => updateAber());
 }
