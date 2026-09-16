@@ -5,7 +5,7 @@ import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.0';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.4.6';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.4.7';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
@@ -721,7 +721,7 @@ function renderAberFieldSVG(el, res, mode) {
   const ly = H - 30;
   g.push(`<line x1="${ml}" y1="${ly}" x2="${ml + 22}" y2="${ly}" stroke="#4cc2ff" stroke-width="2"/><text x="${ml + 28}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">子午 T (εy)</text>`);
   g.push(`<line x1="${ml + 150}" y1="${ly}" x2="${ml + 172}" y2="${ly}" stroke="#ff9f43" stroke-width="2" stroke-dasharray="5 3"/><text x="${ml + 178}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">弧矢 S (εx)</text>`);
-  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">纵轴 = 相对像面的最佳焦移 μm (+=朝物方) · 在 ±扫描范围内取光扇 RMS 最小</text>`);
+  g.push(`<text x="${ml}" y="${ly + 22}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">纵轴 = 场曲(相对像面的轴向焦移) μm (+=朝物方) · 边缘光线与主光线轴向交点 (Zemax 式)</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }

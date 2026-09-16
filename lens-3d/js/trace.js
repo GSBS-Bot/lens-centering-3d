@@ -698,20 +698,21 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
   const efl = fo ? fo.efl : 0;
   const items = [];
   for (const fv of list) {
-    const b = traceFieldBundle(sys, surfaceList, { mode, field: fv, nPupil: 1, lambdaUm: lam });
+    // 场角：角度模式=场值；高度模式按【近轴像高】反推 θ=atan(h/EFL)（与 Zemax 场定义一致：real height ≠ field）。
+    const thetaDeg = (mode === 'height') ? Math.atan(fv / (Math.abs(efl) > 1e-9 ? efl : 1)) * 180 / Math.PI : fv;
+    const b = traceFieldBundle(sys, surfaceList, { mode: 'angle', field: thetaDeg, nPupil: 1, lambdaUm: lam });
     const c = b.chief;
     if (!c) { items.push({ field: fv, ok: false }); continue; }
     const finite = c._finite;
     const param = (c._a != null ? c._a : c._h) || 0;
-    const theta = c._theta ?? 0;
     const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
+    const ang = thetaDeg * Math.PI / 180;
     const buildRay = (px, py) => {
       if (finite) {
         const dx = px * epd / 2, dy = py * epd / 2 - param, dz = zEP - zObj;
         const L = Math.hypot(dx, dy, dz) || 1;
         return { P0: [0, param, zObj], D0: [dx / L, dy / L, dz / L] };
       }
-      const ang = theta * Math.PI / 180;
       return { P0: [px * epd / 2, param + py * epd / 2, zStart], D0: [0, Math.sin(ang), Math.cos(ang)] };
     };
     const hit = (px, py) => {
@@ -723,42 +724,25 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
     };
     const ch = hit(0, 0);
     if (!ch) { items.push({ field: fv, ok: false }); continue; }
-    // 理想像高取近轴一阶 EFL·tanθ（θ=主光线物方半视场角）；与场模式无关，height 模式下 θ 由主光线解出。
-    const idealY = efl * Math.tan(theta * Math.PI / 180);
+    // 畸变：参考像高 = 近轴像高（高度模式=场值；角度模式=EFL·tanθ）。F-Tan(Theta)，负=桶形。
+    const idealY = (mode === 'height') ? fv : efl * Math.tan(ang);
     const dist = Math.abs(idealY) > 1e-9 ? (ch.y - idealY) / idealY * 100 : 0;
-    const merP = [], sagP = [];
-    for (let k = 0; k < nP; k++) {
-      const p = -1 + 2 * k / (nP - 1);
-      const a = hit(0, p); if (a) merP.push(a);
-      const s = hit(p, 0); if (s) sagP.push(s);
-    }
-    let tFocus = 0, sFocus = 0;
-    if (range > 0 && merP.length && sagP.length) {
-      const at = (it, key, dz) => (key === 'y' ? it.y + it.uy * dz : it.x + it.ux * dz);
-      const rms = (arr, key, dz) => {
-        const ref = at(ch, key, dz);
-        let s = 0; for (const it of arr) { const v = at(it, key, dz) - ref; s += v * v; }
-        return Math.sqrt(s / arr.length);
-      };
-      const nZ2 = Math.max(nZ, 61);   // 细扫 + 抛物线顶点细化（避免焦移吸附到粗步长）
-      const best = (arr, key) => {
-        let bi = 0, bv = Infinity;
-        const xs = [], vs = [];
-        for (let k = 0; k < nZ2; k++) {
-          const dz = -range + 2 * range * k / (nZ2 - 1);
-          const v = rms(arr, key, dz); xs.push(dz); vs.push(v);
-          if (v < bv) { bv = v; bi = k; }
-        }
-        let bz = xs[bi];
-        if (bi > 0 && bi < nZ2 - 1) {
-          const y0 = vs[bi - 1], y1 = vs[bi], y2 = vs[bi + 1], den = y0 - 2 * y1 + y2;
-          if (Math.abs(den) > 1e-15) bz = xs[bi] - 0.5 * (y2 - y0) / den * (xs[1] - xs[0]);
-        }
-        return Math.max(-range, Math.min(range, bz));
-      };
-      tFocus = best(merP, 'y'); sFocus = best(sagP, 'x');
-    }
-    items.push({ field: fv, ok: true, theta, realY: ch.y, realX: ch.x, idealY, dist, tFocus, sFocus });
+    // 场曲/像散：子午/弧矢【边缘光线(±1)与主光线的轴向交点】(Zemax 式)。+=朝物方。
+    const mer = nP >= 3 ? [hit(0, 1), hit(0, -1)].filter(Boolean) : [];
+    const sag = nP >= 3 ? [hit(1, 0), hit(-1, 0)].filter(Boolean) : [];
+    const edgeCross = (arr, key) => {
+      const ax = (key === 'y') ? 'y' : 'x', ak = (key === 'y') ? 'uy' : 'ux';
+      const ref = (key === 'y') ? ch.y : ch.x, refU = (key === 'y') ? ch.uy : ch.ux;
+      if (!arr.length) return 0;
+      let sum = 0, n = 0;
+      for (const e of arr) {
+        const du = e[ak] - refU;
+        if (Math.abs(du) > 1e-12) { const z = (ref - e[ax]) / du; if (isFinite(z) && Math.abs(z) < 1e5) { sum += z; n++; } }
+      }
+      return n ? sum / n : 0;
+    };
+    const tFocus = edgeCross(mer, 'y'), sFocus = edgeCross(sag, 'x');
+    items.push({ field: fv, ok: true, theta: thetaDeg, realY: ch.y, realX: ch.x, idealY, dist, tFocus, sFocus });
   }
   return { mode, efl, nPupil: nP, items };
 }
