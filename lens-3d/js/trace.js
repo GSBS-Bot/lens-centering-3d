@@ -711,6 +711,20 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
     : [{ nm: (cfg.lambdaUm ?? LAM_D) * 1000, color: '#ffb300' }];
   const list = (cfg.fields && cfg.fields.length) ? cfg.fields : [0];
   const efl = (firstOrder(sys, surfaceList, lambdas[0].nm / 1000) || {}).efl || 0;
+  // 近轴倍率(逐波长)：用极小视场(0.001mm)实追迹主光线得到"近轴像高/视场"之比。
+  // 近轴参考像高 = (EFL·tanθ) × 倍率；高度模式下 EFL·tanθ 即视场值，故参考≈近轴实像高，近轴区畸变≈0，曲线平滑。
+  const tinyH = 0.001;
+  const scales = lambdas.map(wl => {
+    const L = wl.nm / 1000;
+    const thT = Math.atan(tinyH / (Math.abs(efl) > 1e-9 ? efl : 1)) * 180 / Math.PI;
+    const bT = traceFieldBundle(sys, surfaceList, { mode: 'angle', field: thT, nPupil: 1, lambdaUm: L });
+    const cT = bT.chief;
+    if (!cT) return 1;
+    const pT = (cT._a != null ? cT._a : cT._h) || 0, zsT = cT._zStart, aT = thT * Math.PI / 180;
+    const tr = traceRay3(sys, surfaceList, [0, pT, zsT], [0, Math.sin(aT), Math.cos(aT)], L, true);
+    return (tr.ok && tr.imageY != null && Math.abs(tr.imageY) > 1e-12) ? Math.abs(tr.imageY) / tinyH : 1;
+  });
+  const scaleOf = i => (scales[i] && isFinite(scales[i]) && scales[i] > 0) ? scales[i] : 1;
   const items = [];
   for (const fv of list) {
     const thetaDeg = (mode === 'height') ? Math.atan(fv / (Math.abs(efl) > 1e-9 ? efl : 1)) * 180 / Math.PI : fv;
@@ -736,13 +750,11 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
       const D = tr.dir || [0, 0, 1], uz = Math.abs(D[2]) > 1e-12 ? D[2] : 1;
       return { x: tr.imageX, y: tr.imageY, ux: D[0] / uz, uy: D[1] / uz };
     };
-    const perWl = lambdas.map(wl => {
+    const perWl = lambdas.map((wl, wi) => {
       const L = wl.nm / 1000;
       const ch = hitAt(0, 0, L);
       if (!ch) return { nm: wl.nm, color: wl.color, ok: false };
-      // 近轴参考像高：逐点(逐场、逐波长)取 EFL·tanθ —— 即近轴主光线像高，与场定义(θ=atan(h/EFL))自洽；
-      // 高度模式下它就等于视场值。用解析式的近轴参考可避免逐点近轴追迹在近轴区的微小不一致造成曲线尖点。
-      const hp = (Math.abs(efl) > 1e-9) ? efl * Math.tan(ang) : (mode === 'height' ? fv : 0);
+      const hp = ((Math.abs(efl) > 1e-9) ? efl * Math.tan(ang) : (mode === 'height' ? fv : 0)) * scaleOf(wi);
       const refH = Math.abs(hp) > 1e-9 ? Math.abs(hp) : 1e-9;
       const dist = (Math.abs(ch.y) - Math.abs(hp)) / refH * 100;
       const chiefCross = (e, key) => {

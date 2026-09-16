@@ -5,7 +5,7 @@ import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.0';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.5.2';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.5.3';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
