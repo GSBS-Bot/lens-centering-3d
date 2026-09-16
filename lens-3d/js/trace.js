@@ -740,9 +740,11 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
       const L = wl.nm / 1000;
       const ch = hitAt(0, 0, L);
       if (!ch) return { nm: wl.nm, color: wl.color, ok: false };
-      const hp = paraxChiefHeight(sys, surfaceList, thetaDeg, L, zEP);
-      const refH = Math.abs(hp) > 1e-9 ? Math.abs(hp) : (mode === 'height' ? Math.abs(fv) : Math.abs(efl * Math.tan(ang)));
-      const dist = refH > 1e-9 ? (Math.abs(ch.y) - Math.abs(hp)) / refH * 100 : 0;
+      // 近轴参考像高：逐点(逐场、逐波长)取 EFL·tanθ —— 即近轴主光线像高，与场定义(θ=atan(h/EFL))自洽；
+      // 高度模式下它就等于视场值。用解析式的近轴参考可避免逐点近轴追迹在近轴区的微小不一致造成曲线尖点。
+      const hp = (Math.abs(efl) > 1e-9) ? efl * Math.tan(ang) : (mode === 'height' ? fv : 0);
+      const refH = Math.abs(hp) > 1e-9 ? Math.abs(hp) : 1e-9;
+      const dist = (Math.abs(ch.y) - Math.abs(hp)) / refH * 100;
       const chiefCross = (e, key) => {
         const ax = key === 'y' ? 'y' : 'x', ak = key === 'y' ? 'uy' : 'ux';
         const ref = key === 'y' ? ch.y : ch.x, refU = key === 'y' ? ch.uy : ch.ux;
