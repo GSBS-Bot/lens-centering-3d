@@ -2,7 +2,7 @@
 // 共轴系统：光线在 Y-Z 平面内传播（x=0），面型为球面/圆锥/偶次非球面。
 // 输出：过光阑口径的「轴上平行光」光线折线与一阶量（EFL/BFL/F#）。
 import { surfaceSag, surfaceSagSlope, radiusToCurv, SURF } from './model.js?v=0.8.4';
-import { GLASS_DB } from './glassdb.js?v=0.8.5';
+import { GLASS_DB } from './glassdb.js?v=0.8.6';
 
 const LAM_D = 0.58756, LAM_F = 0.48613, LAM_C = 0.65627;
 // 少量常用牌号 [nd, vd]；其余可用 "nd/vd" 写法
