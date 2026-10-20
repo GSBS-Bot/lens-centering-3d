@@ -298,3 +298,17 @@ Token 消耗结构说明:
     · 公差太慢 → Worker/Node 并行; 先降试验数验证算法再扩。
     · 缓存导致"改了没效果" → 严格 ?v= 级联(glassdb→import/trace→main→index)。
     · 中文文件被写坏 → 只用编辑工具, 禁用 PowerShell Get/Set-Content。
+
+  11.6 Optiland 能力确认(2026-10 核查官方仓库 optiland/optiland, MIT)
+    · 优化: 局部 + 全局优化器、autograd/可微追迹、operand/变量/权重的评价函数、
+      GlassExpert(玻璃牌号分类变量搜索)。
+    · 公差: 原生自带 Monte Carlo + 参数灵敏度分析 —— 可直接作为我们 P4 的"金标准"/对拍基准,
+      甚至在后端直接调用, 显著降低自研公差的验证风险与工作量。
+    · 互操作: 原生导入/导出 Zemax .zmx、CODE V .seq、OSLO .len; 2D(Matplotlib)/3D(VTK)。
+    · 许可: MIT, 代码/思路复用合法; 但它是 Python, 不能直接搬进浏览器
+      (需重写 JS / Pyodide / 后端)。
+    · 对本计划的影响:
+        P1 对拍器: 读 .zmx 直接跑, 成本降低;
+        P3 内核: 照其"变量 / 操作数 / 评价函数"抽象设计接口, 便于 P4/P5 接入;
+        P4 公差: 以其 tolerancing 为基准验证我们的 RMS 蒙特卡洛;
+        P5 优化: 可离线用其优化器, 或借鉴其变量/操作数结构自研。
