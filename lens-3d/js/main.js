@@ -4,7 +4,7 @@ import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
 import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.8';
 import { LDM } from './ldm.js?v=0.8.4';
-import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.2';
+import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.3';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.5.9';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
@@ -1318,12 +1318,28 @@ const LENS_CATALOG = [
     ['zmx:Cooke 40 degree field.zmx', 'Cooke 40° 三片'],
   ]},
   { group: '索尼 Sony', items: [
+    ['json:sony-fe-14mm-f1-8-gm', 'FE 14mm F1.8 GM'],
+    ['json:sony-fe-20mm-f1-8-g', 'FE 20mm F1.8 G'],
+    ['json:sony-fe-24mm-f1-4-gm', 'FE 24mm F1.4 GM'],
     ['json:sony-fe-50mm-f1-2-gm', 'FE 50mm F1.2 GM'],
+    ['json:sony-fe-50mm-f1-4-gm-e2', 'FE 50mm F1.4 GM'],
+    ['json:sony-fe-50mm-f1-4-za', 'FE 50mm F1.4 ZA'],
+    ['json:sony-fe-55mm-f1-8-za', 'FE 55mm F1.8 ZA'],
     ['json:sony-fe-85mm-f1-4-gm', 'FE 85mm F1.4 GM'],
+    ['json:sony-fe-85mm-f1-4-gm-ii', 'FE 85mm F1.4 GM II'],
+    ['json:sony-fe-135mm-f1-8-gm', 'FE 135mm F1.8 GM'],
   ]},
   { group: '适马 SIGMA', items: [
+    ['json:sigma-20mm-f1-4-dg-hsm-art', '20mm F1.4 DG HSM Art'],
+    ['json:sigma-35mm-f1-4-dg-hsm-art', '35mm F1.4 DG HSM Art'],
+    ['json:sigma-35mm-f1-4-dg-art-ii-e2', '35mm F1.4 DG Art II'],
+    ['json:sigma-40mm-f1-4-dg-hsm-art', '40mm F1.4 DG HSM Art'],
     ['json:sigma-50mm-f1-4-dg-hsm-art', '50mm F1.4 DG HSM Art'],
+    ['json:sigma-70mm-f2-8-dg-macro-art', '70mm F2.8 DG Macro Art'],
     ['json:sigma-85mm-f1-4-dg-hsm-art', '85mm F1.4 DG HSM Art'],
+    ['json:sigma-85mm-f1-2-dn-art-prototype', '85mm F1.2 DG DN Art'],
+    ['json:sigma-105mm-f1-4-dg-hsm-art', '105mm F1.4 DG HSM Art'],
+    ['json:sigma-135mm-f1-8-dg-hsm-art', '135mm F1.8 DG HSM Art'],
   ]},
   { group: 'SONGRAW', items: [
     ['json:songraw-af-85mm-f1-2', 'AF 85mm F1.2'],
