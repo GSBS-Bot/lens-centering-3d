@@ -1,0 +1,39 @@
+{
+  "lens": "doubleGauss",
+  "file": "测试zemax文件\\Advanced_SC_doubleGauss_final.zmx",
+  "source": "optiland",
+  "version": "0.6.3",
+  "primary_nm": 587.5618000000001,
+  "nu_eval": 30.0,
+  "efl": 75.0,
+  "fno": 3.0,
+  "fields": [
+    {
+      "field": 0.0,
+      "spotRms_um": 4.5907158313053475,
+      "distortion_pct": 0.0,
+      "tFocus_mm": 0.07198598997672748,
+      "sFocus_mm": 0.07198598997672748,
+      "mtfT_30": 0.829208721789805,
+      "mtfS_30": 0.829208721789805
+    },
+    {
+      "field": 15.1,
+      "spotRms_um": 4.332912151922746,
+      "distortion_pct": -2.7564418415558323,
+      "tFocus_mm": 0.019665808383582364,
+      "sFocus_mm": -0.04372461926110778,
+      "mtfT_30": 0.8521466144783583,
+      "mtfS_30": 0.6791194568438623
+    },
+    {
+      "field": 21.6,
+      "spotRms_um": 9.80659832959431,
+      "distortion_pct": -5.727476074645204,
+      "tFocus_mm": 0.002327449773901885,
+      "sFocus_mm": -0.08481085880566781,
+      "mtfT_30": 0.8089862339310272,
+      "mtfS_30": 0.7064878641320439
+    }
+  ]
+}
