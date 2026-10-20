@@ -12,7 +12,6 @@ const { parseZmx, importFriendJson } = await import('file://' + path.join(tmp, '
 const trace = await import('file://' + path.join(tmp, 'trace_bench.mjs').replace(/\\/g, '/'));
 const mtf = await import('file://' + path.join(tmp, 'mtf_bench.mjs').replace(/\\/g, '/'));
 
-const LAM = 0.587562;
 const LENSES = [
   { name: 'doubleGauss', file: '测试zemax文件/Advanced_SC_doubleGauss_final.zmx' },
   { name: 'cooke40', file: '测试zemax文件/Cooke 40 degree field.zmx' },
@@ -66,6 +65,11 @@ for (const spec of LENSES) {
   if (!sys) { console.log('[err ] ' + spec.name + ': 解析失败'); continue; }
   const sl = slist(sys);
   const mode = sys.fmode;
+  // 取该镜头自己的主波长
+  const wls = (sys.wavelengths && sys.wavelengths.length) ? sys.wavelengths : [{ nm: 587.56 }];
+  let pi = wls.findIndex(w => w && w.primary);
+  if (pi < 0) pi = (Number.isInteger(sys.primary) && sys.primary >= 0 && sys.primary < wls.length) ? sys.primary : 0;
+  const LAM = (+((wls[pi] || {}).nm) || 587.56) / 1000;
   const fo = trace.firstOrder(sys, sl, LAM) || {};
   const fields = (sys.fields && sys.fields.length) ? sys.fields.slice() : [0];
 
