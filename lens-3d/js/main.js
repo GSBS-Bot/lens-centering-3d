@@ -2,7 +2,7 @@
 import * as THREE from '../vendor/three/three.module.js?v=0.8.4';
 import { OrbitControls } from '../vendor/three/OrbitControls.js?v=0.8.4';
 import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0.8.4';
-import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
+import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.8';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.2';
 import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.5.9';
@@ -92,11 +92,11 @@ function applyPanelFromSys() {
 const scene = new THREE.Scene();
 // 主题：3D 背景/网格随主题切换（面板配色由 css 变量控制）
 const THEMES = {
-  blue:     { bg:'#0e131a', grid1:'#26313d', grid2:'#1d2631', ray:0xffffff, accent:0x4cc2ff, accentSoft:0x66d9ff, accentEdge:0x8fe6ff },
-  graphite: { bg:'#141414', grid1:'#333333', grid2:'#242424', ray:0xffffff, accent:0xcfd8e3, accentSoft:0xbfc9d4, accentEdge:0xaab6c2 },
-  violet:   { bg:'#120e1b', grid1:'#3a2d52', grid2:'#271f37', ray:0xffffff, accent:0xb388ff, accentSoft:0x9d6ff0, accentEdge:0xc9aaff },
-  forest:   { bg:'#0d1512', grid1:'#28483c', grid2:'#1d3128', ray:0xffffff, accent:0x5fd0a0, accentSoft:0x49b98a, accentEdge:0x8fe6c4 },
-  light:    { bg:'#eef1f5', grid1:'#c7d0d9', grid2:'#dde3e9', ray:0x2b3a48, accent:0x0b7fc4, accentSoft:0x2a9fd6, accentEdge:0x3aa7dd },
+  blue:     { bg:'#0e131a', grid1:'#26313d', grid2:'#1d2631', ray:0xffffff, accent:0x4cc2ff, accentSoft:0x66d9ff, accentEdge:0x8fe6ff, glass:0x86b9e4, glassEdge:0x9fd8ff, glassOpacity:0.20 },
+  graphite: { bg:'#141414', grid1:'#333333', grid2:'#242424', ray:0xffffff, accent:0xcfd8e3, accentSoft:0xbfc9d4, accentEdge:0xaab6c2, glass:0xc9d2dc, glassEdge:0xbfc9d4, glassOpacity:0.20 },
+  violet:   { bg:'#120e1b', grid1:'#3a2d52', grid2:'#271f37', ray:0xffffff, accent:0xb388ff, accentSoft:0x9d6ff0, accentEdge:0xc9aaff, glass:0xb9a3e8, glassEdge:0xc9aaff, glassOpacity:0.20 },
+  forest:   { bg:'#0d1512', grid1:'#28483c', grid2:'#1d3128', ray:0xffffff, accent:0x5fd0a0, accentSoft:0x49b98a, accentEdge:0x8fe6c4, glass:0x92d9bf, glassEdge:0x8fe6c4, glassOpacity:0.20 },
+  light:    { bg:'#eef1f5', grid1:'#c7d0d9', grid2:'#dde3e9', ray:0x2b3a48, accent:0x0b7fc4, accentSoft:0x2a9fd6, accentEdge:0x3aa7dd, glass:0x8fb2cf, glassEdge:0x4f7f9e, glassOpacity:0.38 },
 };
 let rayBaseColor = 0xffffff;
 let currentTheme = 'blue';
@@ -104,6 +104,33 @@ scene.background = new THREE.Color(THEMES.blue.bg);
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);            // 3D 透视
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('view'), antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+// 环境反射（参考 Optiland 的玻璃质感）：竖直渐变 + 两块柔光箱 -> PMREM 环境贴图
+function buildStudioEnv() {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, 128);
+  g.addColorStop(0.00, '#ffffff');
+  g.addColorStop(0.40, '#c6d6e6');
+  g.addColorStop(0.52, '#5a6572');
+  g.addColorStop(1.00, '#0c1016');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 128);
+  const blob = (cx, cy, r, a) => {
+    const rg = x.createRadialGradient(cx, cy, 0, cx, cy, r);
+    rg.addColorStop(0, 'rgba(255,255,255,' + a + ')');
+    rg.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = rg; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill();
+  };
+  blob(64, 34, 54, 0.95); blob(196, 44, 40, 0.55);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  if ('colorSpace' in tex && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  const pm = new THREE.PMREMGenerator(renderer);
+  const rt = pm.fromEquirectangular(tex);
+  tex.dispose(); pm.dispose();
+  return rt.texture;
+}
+try { scene.environment = buildStudioEnv(); } catch (e) { console.warn('environment map failed', e); }
 const layout2dEl = document.getElementById('layout2d');   // 2D 剖面 SVG（参考站形式）
 const layoutBadgeEl = document.getElementById('layoutBadge');
 const vertEl = document.getElementById('vertReadout');    // 3D 顶点坐标小窗
@@ -111,10 +138,16 @@ const vertEl = document.getElementById('vertReadout');    // 3D 顶点坐标小�
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-scene.add(new THREE.HemisphereLight('#dcefff', '#10141c', 1.0));
-const dir = new THREE.DirectionalLight('#ffffff', 1.6);
+scene.add(new THREE.HemisphereLight('#dcefff', '#10141c', 0.45));
+const dir = new THREE.DirectionalLight('#ffffff', 1.25);
 dir.position.set(20, 30, 20);
 scene.add(dir);
+const fill = new THREE.DirectionalLight('#a9c8ff', 0.55);
+fill.position.set(-26, -12, 16);
+scene.add(fill);
+const rim = new THREE.DirectionalLight('#ffffff', 0.8);
+rim.position.set(-12, 10, -34);
+scene.add(rim);
 let grid = new THREE.GridHelper(200, 50, THEMES.blue.grid1, THEMES.blue.grid2);
 scene.add(grid);
 
@@ -134,7 +167,10 @@ function applyTheme(name, rerender) {
     grid = new THREE.GridHelper(200, 50, t.grid1, t.grid2);
     scene.add(grid);
   }
-  if (typeof setTheme3D === 'function') setTheme3D({ accent: t.accent, accentSoft: t.accentSoft, accentEdge: t.accentEdge });
+  if (typeof setTheme3D === 'function') setTheme3D({
+    accent: t.accent, accentSoft: t.accentSoft, accentEdge: t.accentEdge,
+    glass: t.glass, glassEdge: t.glassEdge, glassOpacity: t.glassOpacity,
+  });
   const sw = document.getElementById('themeSwitch');
   if (sw) sw.querySelectorAll('.theme-dot').forEach(b => b.classList.toggle('active', b.dataset.theme === name));
   if (rerender) { try { rebuildScene(false); renderLayout2D(); refreshActivePanel(); } catch (e) {} }

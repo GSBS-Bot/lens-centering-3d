@@ -4,7 +4,11 @@ import * as THREE from '../vendor/three/three.module.js?v=0.8.4';
 import { surfaceSag, SURF } from './model.js?v=0.8.4';
 
 // 3D 主题调色板（由 main.js 的 applyTheme 设置；默认=深色主题）
-const THEME3D = { accent: 0x4cc2ff, accentSoft: 0x66d9ff, accentEdge: 0x8fe6ff };
+// glass/glassEdge/glassOpacity 参考 Optiland 的透镜材质：半透明、高光、浅色边线
+const THEME3D = {
+  accent: 0x4cc2ff, accentSoft: 0x66d9ff, accentEdge: 0x8fe6ff,
+  glass: 0x86b9e4, glassEdge: 0x9fd8ff, glassOpacity: 0.20,
+};
 export function setTheme3D(o) { if (o) Object.assign(THEME3D, o); }
 
 // 面顶点 z（相对系统原点=物面）。为把原点移到“像面中心”，整体减去像面顶点 z。
@@ -28,7 +32,7 @@ export function mechRadius(front, back, gapFactor = 1.0, def = 20) {
   return Math.max(fm, bm) * gapFactor;
 }
 
-export function buildLensBody(front, back, { segments = 64, samples = 40 } = {}) {
+export function buildLensBody(front, back, { segments = 80, samples = 48 } = {}) {
   const half = mechRadius(front, back);
   const zf = 0;                 // 前表面顶点（局部）
   const zb = front.thi;         // 后表面顶点 = 前+中心厚
@@ -68,9 +72,19 @@ export function buildSystemGroup(sys, kind = 'solid') {
 
   for (const [front, back] of lenses) {
     const geo = buildLensBody(front, back);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x3f8fdd, metalness: 0.05, roughness: 0.28,
-      transparent: false, opacity: 1, side: THREE.DoubleSide,
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: THEME3D.glass,
+      metalness: 0.0,
+      roughness: 0.05,
+      clearcoat: 0.85,
+      clearcoatRoughness: 0.03,
+      ior: 1.52,
+      specularIntensity: 1.0,
+      envMapIntensity: 1.15,
+      transparent: true,
+      opacity: THEME3D.glassOpacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(geo, mat);
     const fi = sys.surfaces.indexOf(front);
@@ -83,6 +97,25 @@ export function buildSystemGroup(sys, kind = 'solid') {
     mesh.userData.backIdx = bi;
     lensMeshes.push(mesh);
     group.add(mesh);
+
+    // 镜片轮廓线（前后两圈机械边缘）——半透明玻璃靠它保持形体可读
+    const half = mechRadius(front, back);
+    const rF = z + surfaceSag(half, front.toShape());
+    const rB = z + (front.thi || 0) + surfaceSag(half, back.toShape());
+    const rimMat = new THREE.LineBasicMaterial({
+      color: THEME3D.glassEdge, transparent: true, opacity: 0.75,
+    });
+    for (const zz of [rF, rB]) {
+      const pts = [];
+      for (let k = 0; k < 96; k++) {
+        const a = (k / 96) * Math.PI * 2;
+        pts.push(new THREE.Vector3(half * Math.cos(a), half * Math.sin(a), zz));
+      }
+      const rim = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), rimMat);
+      rim.name = 'lensRim';
+      rim.userData.z = zz;
+      group.add(rim);
+    }
   }
 
   // 每个面的顶点 z（世界，像面中心=0）—— 供高亮/标注/取景用

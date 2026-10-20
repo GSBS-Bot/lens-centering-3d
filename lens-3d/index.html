@@ -12,7 +12,7 @@
     // 版本自检：CDN/浏览器可能缓存 HTML（max-age=600）。拉取 version.txt（禁缓存），
     // 若与内置版本不同则用 appv 参数强制重新加载 HTML，避免看到旧版。
     (function () {
-      var APP = '1.5.10';
+      var APP = '1.5.11';
       try {
         fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })
           .then(function (r) { return r.ok ? r.text() : ''; })
@@ -171,6 +171,6 @@
       </section>
     </main>
   </div>
-  <script type="module" src="js/main.js?v=1.5.10"></script>
+  <script type="module" src="js/main.js?v=1.5.11"></script>
 </body>
 </html>
