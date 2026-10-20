@@ -569,22 +569,32 @@ function updateSpot() {
   const airyR = (spotAiry?.checked && fno > 0) ? airyRadius(fno, pri.nm / 1000) : 0;
   renderSpotSVG(spotMain, spots, wlList, gwin, pri.nm, airyR);
 }
+// 小字号说明文字按「显示宽度/viewBox 宽度」放大，保证在缩放后的 SVG 里仍然清晰可读
+function legible(html, el, vbW) {
+  const cw = el && el.clientWidth ? el.clientWidth : 0;
+  const inv = (cw > 40 && vbW > 0) ? Math.max(1, vbW / cw) : 1;
+  if (inv <= 1.05) return html;
+  return html.replace(/font-size="([0-9.]+)"/g, (m, b) => (+b <= 13.5 ? `font-size="${(+b * inv).toFixed(1)}"` : m));
+}
+
 function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
   const pad = 10, headerH = 30, cellW = 250, plotSize = 168, titleH = 22, imgH = 20, gap = 14, tableH = 78;
   const cols = Math.max(1, spots.length);   // 一字排开：每视场一列
   const rows = Math.ceil(spots.length / cols);
   const W = pad * 2 + cols * cellW + (cols - 1) * gap;
-  const H = headerH + rows * (plotSize + titleH + imgH + 10) + (rows - 1) * gap + tableH + pad;
+  const _cw = el.clientWidth || 0;
+  const S = (_cw > 40) ? Math.max(1, W / _cw) : 1;
+  const H = headerH + rows * (plotSize + titleH + imgH + 10) + (rows - 1) * gap + tableH * S + pad;
   const mode = fmodeEl?.value || 'angle';
   const g = [];
   g.push(`<text x="${pad}" y="18" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">点列图 · 面： 像面</text>`);
   // 右上波长图例
-  let lx = W - pad - 44;
-  for (let i = wlList.length - 1; i >= 0; i--) {
-    const w = wlList[i];
+  const _lgStep = 56 * S;
+  let lx = W - pad - _lgStep * wlList.length;
+  for (const w of wlList) {
     g.push(`<circle cx="${lx + 5}" cy="12" r="4.5" fill="${adaptHexStr(w.color)}"/>`);
     g.push(`<text x="${lx + 14}" y="16" fill="#9caab4" font-size="10" text-anchor="start" font-family="ui-monospace,monospace">${w.nm.toFixed(2)}</text>`);
-    lx -= 52;
+    lx += _lgStep;
   }
   const sc = (plotSize / 2) / win;
   spots.forEach((s, i) => {
@@ -602,8 +612,11 @@ function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
     g.push(`<rect x="${px}" y="${py}" width="${plotSize}" height="${plotSize}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
     // 点(按波长分色)；质心为原点
     const cX = px + plotSize / 2, cY = py + plotSize / 2;
-    for (const gr of s.groups) for (const p of gr.points)
-      g.push(`<circle cx="${(cX + (p[0] - s.cx) * sc).toFixed(2)}" cy="${(cY - (p[1] - s.cy) * sc).toFixed(2)}" r="1.2" fill="${adaptHexStr(gr.color)}" opacity=".92"/>`);
+    const priIdx = Math.max(0, s.groups.findIndex(gr => Math.abs(gr.nm - primaryNm) < 1e-6));
+    const order = s.groups.map((gr, gi) => ({ gr, gi }))
+      .sort((a, b) => (a.gi === priIdx ? 1 : 0) - (b.gi === priIdx ? 1 : 0));
+    for (const { gr, gi } of order) for (const p of gr.points)
+      g.push(`<circle cx="${(cX + (p[0] - s.cx) * sc).toFixed(2)}" cy="${(cY - (p[1] - s.cy) * sc).toFixed(2)}" r="1.0" fill="${adaptHexStr(gr.color)}" opacity="${gi === priIdx ? 1 : 0.75}"/>`);
     g.push(`<circle cx="${cX}" cy="${cY}" r="1.6" fill="#4cc2ff"/>`);
     if (airyR > 0) g.push(`<circle cx="${cX}" cy="${cY}" r="${(airyR * sc).toFixed(2)}" fill="none" stroke="#3ddc97" stroke-width="1" stroke-dasharray="3 2" opacity=".8"/>`);
     // 左侧比例尺(窗口半宽 wn=win, 标注盒宽 2*win, μm)
@@ -616,12 +629,12 @@ function renderSpotSVG(el, spots, wlList, win, primaryNm, airyR) {
   });
   // 底部 RMS / GEO 表
   const ty = headerH + rows * (plotSize + titleH + imgH + 10) + (rows - 1) * gap + 6;
-  g.push(`<text x="${pad}" y="${ty + 14}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">视场      : ${spots.map((s, i) => ('' + (i + 1))).join('          ')}</text>`);
-  g.push(`<text x="${pad}" y="${ty + 30}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">RMS 半径  : ${spots.map(s => (s.rms * 1000).toFixed(1)).join('       ')}</text>`);
-  g.push(`<text x="${pad}" y="${ty + 46}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">GEO 半径  : ${spots.map(s => (s.geo * 1000).toFixed(1)).join('       ')}</text>`);
-  g.push(`<text x="${pad}" y="${ty + 64}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">单位 μm · 中心: 加权质心 · RMS 按波长权重 · 窗口 ±${(win * 1000).toFixed(0)}μm @${Math.round(primaryNm)}nm</text>`);
+  g.push(`<text x="${pad}" y="${ty + 14 * S}" fill="#C8D6E1" font-size="11.5" font-family="ui-monospace,monospace">视场      : ${spots.map((s, i) => ('' + (i + 1))).join('          ')}</text>`);
+  g.push(`<text x="${pad}" y="${ty + 30 * S}" fill="#C8D6E1" font-size="11.5" font-family="ui-monospace,monospace">RMS 半径  : ${spots.map(s => (s.rms * 1000).toFixed(1)).join('       ')}</text>`);
+  g.push(`<text x="${pad}" y="${ty + 46 * S}" fill="#C8D6E1" font-size="11.5" font-family="ui-monospace,monospace">GEO 半径  : ${spots.map(s => (s.geo * 1000).toFixed(1)).join('       ')}</text>`);
+  g.push(`<text x="${pad}" y="${ty + 64 * S}" fill="#AEBECB" font-size="11" font-family="ui-monospace,monospace">单位 μm · 中心: 加权质心 · RMS 按波长权重 · 窗口 ±${(win * 1000).toFixed(0)}μm @${Math.round(primaryNm)}nm</text>`);
   el.setAttribute('viewBox', `0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
-  el.innerHTML = g.join('');
+  el.innerHTML = legible(g.join(''), el, W);
 }
 
 // ---- 像差图（M2b 第二步）：光扇图 / 场曲·像散 / 畸变 ----
@@ -677,7 +690,9 @@ function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
   const pad = 10, headerH = 30, cellW = 250, plotSize = 168, titleH = 22, gap = 14;
   const cols = Math.max(1, fans.length);
   const W = pad * 2 + cols * cellW + (cols - 1) * gap;
-  const H = headerH + titleH + plotSize + 30 + pad;
+  const _cw = el.clientWidth || 0;
+  const S = (_cw > 40) ? Math.max(1, W / _cw) : 1;
+  const H = headerH + titleH + plotSize + 30 * S + pad;
   let emax = 0;
   for (const f of fans) for (const grp of f.groups) {
     const fan = grp.fan; if (!fan || !fan.ok) continue;
@@ -688,19 +703,19 @@ function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
   emax *= 1.15;
   const g = [];
   g.push(`<text x="${pad}" y="18" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">光扇图 (Ray Fan) · 面： 像面</text>`);
-  let lx = W - pad - 44;
-  for (let i = wlList.length - 1; i >= 0; i--) {
-    const w = wlList[i];
+  const _lgStep = 56 * S;
+  let lx = W - pad - _lgStep * wlList.length;
+  for (const w of wlList) {
     g.push(`<circle cx="${lx + 5}" cy="12" r="4.5" fill="${adaptHexStr(w.color)}"/>`);
     g.push(`<text x="${lx + 14}" y="16" fill="#9caab4" font-size="10" text-anchor="start" font-family="ui-monospace,monospace">${w.nm.toFixed(2)}</text>`);
-    lx -= 52;
+    lx += _lgStep;
   }
   const scY = (plotSize / 2) / emax;
   fans.forEach((f, i) => {
     const x = pad + i * (cellW + gap), y = headerH;
     const fieldLabel = mode === 'height' ? `像高: ${f.field.toFixed(2)} (mm)` : `物面: ${f.field.toFixed(2)} (度)`;
     g.push(`<text x="${x}" y="${y + 12}" fill="#E6EDF1" font-size="11.5" font-family="ui-monospace,monospace">${fieldLabel}</text>`);
-    const px = x, py = y + 18;
+    const px = x + 26, py = y + 18;
     for (let k = 0; k <= 4; k++) {
       const off = k / 4 * plotSize;
       g.push(`<line x1="${(px + off).toFixed(1)}" y1="${py}" x2="${(px + off).toFixed(1)}" y2="${py + plotSize}" stroke="#1b232d" stroke-width="1"/>`);
@@ -721,9 +736,9 @@ function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
     g.push(`<text x="${px - 4}" y="${py + plotSize}" text-anchor="end" fill="#9caab4" font-size="9" font-family="ui-monospace,monospace">-${(emax * 1000).toFixed(0)}</text>`);
     g.push(`<text x="${cX}" y="${py + plotSize + 14}" text-anchor="middle" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">Px/Py → ±1</text>`);
   });
-  g.push(`<text x="${pad}" y="${H - 8}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">实线=子午(εy~Py) · 虚线=弧矢(εx~Px) · 纵轴 μm @${Math.round(primaryNm)}nm · 相对主光线像点</text>`);
+  g.push(`<text x="${pad}" y="${H - 8 * S}" fill="#AEBECB" font-size="11" font-family="ui-monospace,monospace">实线=子午(εy~Py) · 虚线=弧矢(εx~Px) · 纵轴 μm @${Math.round(primaryNm)}nm · 相对主光线像点</text>`);
   el.setAttribute('viewBox', `0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
-  el.innerHTML = g.join('');
+  el.innerHTML = legible(g.join(''), el, W);
 }
 function renderAberFdSVG(el, res, mode, primaryNm) {
   const W = 1000, H = 500;
@@ -796,21 +811,21 @@ function renderAberFdSVG(el, res, mode, primaryNm) {
   const pp = last.perWl.find(p => p.ok && Math.abs(p.nm - primaryNm) < 1e-6) || last.perWl.find(p => p.ok) || { nm: primaryNm };
   let dMax = 0;
   for (const o of items) { const p = o.perWl.find(q => q.nm === pp.nm && q.ok); if (p && isFinite(p.dist)) dMax = Math.max(dMax, Math.abs(p.dist)); }
-  const by = 400, bh = 92;
+  const by = 392, bh = 104;
   g.push(`<rect x="${lx0 - 6}" y="${by}" width="${lw + 12}" height="${bh}" fill="none" stroke="#39424d" stroke-width="1"/>`);
   g.push(`<rect x="${rx0 - 6}" y="${by}" width="${rw + 12}" height="${bh}" fill="none" stroke="#39424d" stroke-width="1"/>`);
   const fldStr = mode === 'height' ? vmax.toFixed(3) + ' 毫米' : vmax.toFixed(2) + ' 度';
-  const txt = (x, y, s, c) => g.push(`<text x="${x}" y="${y}" fill="${c || '#c9d6df'}" font-size="12" font-family="${mono}">${s}</text>`);
-  txt(lx0, by + 18, '场曲', '#E6EDF1');
-  txt(rx0, by + 18, `F-Tan(Theta) 畸变`, '#E6EDF1');
-  txt(lx0, by + 40, `最大视场 = ${fldStr}`);
-  txt(lx0, by + 58, `弧矢场曲 = ${(pp.sFocus || 0).toFixed(4)} 毫米`);
-  txt(lx0, by + 76, `子午场曲 = ${(pp.tFocus || 0).toFixed(4)} 毫米`);
-  txt(rx0, by + 40, `最大视场 = ${fldStr}`);
-  txt(rx0, by + 58, `最大畸变 = ${dMax.toFixed(4)}%`);
-  txt(rx0, by + 76, `波长 = ${pp.nm.toFixed(1)} nm`);
+  const txt = (x, y, s, c) => g.push(`<text x="${x}" y="${y}" fill="${c || '#dce7f0'}" font-size="15" font-family="${mono}">${s}</text>`);
+  txt(lx0, by + 20, '场曲', '#E6EDF1');
+  txt(rx0, by + 20, `F-Tan(Theta) 畸变`, '#E6EDF1');
+  txt(lx0, by + 46, `最大视场 = ${fldStr}`);
+  txt(lx0, by + 70, `弧矢场曲 = ${(pp.sFocus || 0).toFixed(4)} 毫米`);
+  txt(lx0, by + 94, `子午场曲 = ${(pp.tFocus || 0).toFixed(4)} 毫米`);
+  txt(rx0, by + 46, `最大视场 = ${fldStr}`);
+  txt(rx0, by + 70, `最大畸变 = ${dMax.toFixed(4)}%`);
+  txt(rx0, by + 94, `波长 = ${pp.nm.toFixed(1)} nm`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  el.innerHTML = g.join('');
+  el.innerHTML = legible(g.join(''), el, W);
 }
 
 
@@ -883,9 +898,9 @@ function renderIllumSVG(el, res, designFields, mode, nm) {
     const o = nearest(items, Math.abs(+f));
     return o ? `${(+f).toFixed(2)}→${(o.RI * 100).toFixed(1)}%` : '—';
   }).join('   ');
-  g.push(`<text x="${ml}" y="${H - 10}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">设计视场 RI： ${dv}</text>`);
+  g.push(`<text x="${ml}" y="${H - 10}" fill="#C8D6E1" font-size="11.5" font-family="ui-monospace,monospace">设计视场 RI： ${dv}</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  el.innerHTML = g.join('');
+  el.innerHTML = legible(g.join(''), el, W);
 }
 function nearest(items, f) {
   let best = null, bd = Infinity;
@@ -1025,9 +1040,9 @@ function renderMtfSVG(el, d) {
     lx += 20 + txt.length * 6.4 + 14;
     if (lx > W - mr - 140 && i < d.sets.length - 1) { lx = ml; ly += 16; }
   }
-  g.push(`<text x="${ml}" y="${H - 8}" fill="#6D7B86" font-size="10" font-family="ui-monospace,monospace">${d.algo === 'diff' ? '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 波前 OPD 以主光线像点为参考球心(离焦未含)' : '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 几何 MTF 近衍射极限时偏高，仅供参考'}</text>`);
+  g.push(`<text x="${ml}" y="${H - 8}" fill="#AEBECB" font-size="11" font-family="ui-monospace,monospace">${d.algo === 'diff' ? '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 波前 OPD 以主光线像点为参考球心(离焦未含)' : '实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(圆孔) · 几何 MTF 近衍射极限时偏高，仅供参考'}</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  el.innerHTML = g.join('');
+  el.innerHTML = legible(g.join(''), el, W);
 }
 
 // ---- P0b：MTF 离焦曲线（真实波前瞳函数 + 离焦相位扫描）----
@@ -1124,9 +1139,9 @@ function renderMtfFocusSVG(el, d) {
     lx += 20 + txt.length * 6.4 + 14;
     if (lx > W - mr - 140 && i < d.sets.length - 1) { lx = ml; ly += 16; }
   }
-  g.push(`<text x="${ml}" y="${H - 8}" fill="#6D7B86" font-size="10" font-family="ui-monospace,monospace">实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(理想圆孔·同离焦) · 绿虚线=最佳焦面(各视场T之和最大) · ${d.wlLabel && d.wlLabel.indexOf('复色') >= 0 ? '复色(按波长权重复数加权)' : '单色(主波长)'}</text>`);
+  g.push(`<text x="${ml}" y="${H - 8}" fill="#AEBECB" font-size="11" font-family="ui-monospace,monospace">实线=T(子午) · 虚线=S(弧矢) · 灰虚线=衍射极限(理想圆孔·同离焦) · 绿虚线=最佳焦面(各视场T之和最大) · ${d.wlLabel && d.wlLabel.indexOf('复色') >= 0 ? '复色(按波长权重复数加权)' : '单色(主波长)'}</text>`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  el.innerHTML = g.join('');
+  el.innerHTML = legible(g.join(''), el, W);
 }
 
 function svgPoint(e) {
@@ -1511,9 +1526,13 @@ async function loadFriendLens(id, resetView = true) {
   if (resetView) fitCamera('2d');
   return sys;
 }
+const DEFAULT_LENS = 'json:sigma-85mm-f1-4-dg-hsm-art';
 async function loadDefault() {
   try {
-    const s = await loadZmxFile(DEFAULT_ZMX_FILE, true);
+    const ci = DEFAULT_LENS.indexOf(':');
+    const kind = DEFAULT_LENS.slice(0, ci), id = DEFAULT_LENS.slice(ci + 1);
+    const s = kind === 'json' ? await loadFriendLens(id, true) : await loadZmxFile(id, true);
+    if (demoSel) demoSel.value = DEFAULT_LENS;
     setStatus(`默认载入 «${s.name}» · 面 ${s.surfaces.length} · 镜片 ${lensMeshes.length} 片`, true);
   } catch (e) {
     console.error('默认文件载入失败，回退 demo', e);
