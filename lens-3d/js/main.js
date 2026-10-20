@@ -727,6 +727,8 @@ function renderAberFdSVG(el, res, mode, primaryNm) {
     g.push(`<line x1="${rx0}" y1="${y.toFixed(1)}" x2="${rx0 + rw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
     g.push(`<text x="${lx0 - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="${mono}">${f.toFixed(vmax < 5 ? 2 : 1)}</text>`);
   }
+  const fldLab = mode === 'height' ? '视场 (mm)' : '视场 (°)';
+  g.push(`<text transform="translate(${lx0 - 52} ${mt + ph / 2}) rotate(-90)" text-anchor="middle" fill="#9caab4" font-size="10" font-family="${mono}">${fldLab}</text>`);
   g.push(`<rect x="${lx0}" y="${mt}" width="${lw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
   g.push(`<rect x="${rx0}" y="${mt}" width="${rw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
   g.push(`<text x="${lx0 + lw / 2}" y="${mt - 8}" text-anchor="middle" fill="#E6EDF1" font-size="11.5" font-family="${mono}">场曲 (T 实线 / S 虚线)</text>`);
