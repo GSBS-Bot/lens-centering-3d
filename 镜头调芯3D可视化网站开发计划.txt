@@ -312,3 +312,14 @@ Token 消耗结构说明:
         P3 内核: 照其"变量 / 操作数 / 评价函数"抽象设计接口, 便于 P4/P5 接入;
         P4 公差: 以其 tolerancing 为基准验证我们的 RMS 蒙特卡洛;
         P5 优化: 可离线用其优化器, 或借鉴其变量/操作数结构自研。
+
+  11.7 缓存与版本维护约定(必读)
+    · 改任何 JS 都必须升 ?v= 并级联: glassdb → import/trace → main.js → index.html。
+    · 同步更新"版本自检"两处, 否则旧缓存无法自动刷新:
+        1) lens-3d/version.txt            (内容 = 版本号, 如 1.5.8)
+        2) lens-3d/index.html 里 var APP = 'x.y.z';
+      页面加载时会拉 version.txt(禁缓存); 与 APP 不同则带 ?appv= 强制重载 HTML。
+    · 启动台 index.html 已加 no-cache meta。
+    · 发布后如仍见旧版: 用户需硬刷新一次(Ctrl+Shift+R / Ctrl+F5); 之后由自检接管。
+    · GitHub Pages 偶发 deploy 失败(transient): 推空提交重新触发即可。
+    · 禁用 PowerShell Get/Set-Content 改这些文件(会写坏中文), 只用编辑工具。
