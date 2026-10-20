@@ -1,0 +1,16 @@
+# Cloudflare Pages 直接上传时排除的文件/目录（不会被发布）
+.git/
+reference/
+参考资源/
+启动.html
+版本记录.txt
+镜头调芯3D可视化网站开发计划.txt
+txt.txt
+私有部署计划.txt
+serve.bat
+serve.ps1
+serve_nocache.py
+*.log
+desktop.ini
+Thumbs.db
+.DS_Store

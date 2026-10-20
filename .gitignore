@@ -17,3 +17,6 @@ serve_nocache.py
 
 # 本地启动台(指向 localhost, 不适合 Gitee Pages; 用根目录 index.html 作入口)
 启动.html
+
+# 本地私有部署计划(不提交/不发布)
+私有部署计划.txt
