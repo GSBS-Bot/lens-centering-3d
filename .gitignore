@@ -20,3 +20,6 @@ serve_nocache.py
 
 # 本地私有部署计划(不提交/不发布)
 私有部署计划.txt
+
+# bench 运行时临时目录
+bench/.tmp/
