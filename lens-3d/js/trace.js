@@ -765,15 +765,27 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
         const z = (ref - e[ax]) / du;
         return (isFinite(z) && Math.abs(z) < 1e4) ? z : null;
       };
-      const tz = [hitAt(0, 1, L), hitAt(0, -1, L)].map(e => e && chiefCross(e, 'y')).filter(z => z !== null && z !== undefined);
+      const tz = [hitAt(0, 1, L)].map(e => e && chiefCross(e, 'y')).filter(z => z !== null && z !== undefined);
       const sz = [hitAt(1, 0, L), hitAt(-1, 0, L)].map(e => e && chiefCross(e, 'x')).filter(z => z !== null && z !== undefined);
       const avg = arr => arr.length ? arr.reduce((a, b2) => a + b2, 0) / arr.length : 0;
       return {
         nm: wl.nm, color: wl.color, ok: true, realY: ch.y, idealY: hp, dist,
-        tFocus: avg(tz), sFocus: avg(sz),
+        _rawT: avg(tz), tFocus: avg(tz), sFocus: avg(sz),
       };
     });
     items.push({ field: fv, ok: true, theta: thetaDeg, perWl });
+  }
+  // 子午场曲按 Zemax 口径：+1 边缘光线×主光线，相对轴上归零
+  const axis = items.find(it => it.ok && Math.abs(it.field) < 1e-9);
+  if (axis) {
+    const aT = axis.perWl.map(p => (p.ok ? p._rawT : 0));
+    for (const it of items) {
+      if (!it.ok) continue;
+      for (let wi = 0; wi < it.perWl.length; wi++) {
+        const p = it.perWl[wi];
+        if (p.ok) p.tFocus = p._rawT - aT[wi];
+      }
+    }
   }
   return { mode, efl, wl: lambdas.map(w => ({ nm: w.nm, color: w.color })), items };
 }

@@ -5,7 +5,7 @@ import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.7';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.2';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.5.8';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.5.9';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
@@ -634,8 +634,7 @@ function updateAber() {
       fields = [...set].sort((a, b) => a - b);
     } else fields = [+fsel];
     const res = fieldAberrations(sys, surfaceList, { mode, fields, lambdas: wlList });
-    if (type === 'field') renderAberFieldSVG(aberMain, res, mode);
-    else renderAberDistSVG(aberMain, res, mode);
+    renderAberFdSVG(aberMain, res, mode, pri.nm);
   }
 }
 function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
@@ -690,100 +689,88 @@ function renderAberFanSVG(el, fans, wlList, mode, primaryNm) {
   el.setAttribute('viewBox', `0 0 ${Math.ceil(W)} ${Math.ceil(H)}`);
   el.innerHTML = g.join('');
 }
-function renderAberFieldSVG(el, res, mode) {
-  const W = 620, H = 384, ml = 66, mr = 24, mt = 44, mb = 66;
-  const pw = W - ml - mr, ph = H - mt - mb;
+function renderAberFdSVG(el, res, mode, primaryNm) {
+  const W = 1000, H = 500;
+  const mt = 56, ph = 280;
+  const lx0 = 76, lw = 380, rx0 = 566, rw = 380;
   const items = (res.items || []).filter(o => o.ok && o.perWl && o.perWl.some(p => p.ok));
   const wl = res.wl || [];
   const g = [];
-  const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
-  g.push(`<text x="${ml - 48}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">场曲 / 像散 · 面： 像面</text>`);
-  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">纵轴 视场 ${unit}</text>`);
+  g.push(`<text x="20" y="20" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">场曲 / 畸变 · 面：像面</text>`);
   if (!items.length) { el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.innerHTML = g.join('') + `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#9caab4" font-size="12">无数据</text>`; return; }
   const vmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
-  let fmax = 0;
-  for (const o of items) for (const p of o.perWl) if (p.ok) fmax = Math.max(fmax, Math.abs(p.tFocus), Math.abs(p.sFocus));
-  if (!(fmax > 0)) fmax = 1e-4;
-  fmax *= 1.12;
-  const xs = v => ml + pw / 2 + (v / fmax) * (pw / 2);
+  let fmax = 0, dmax = 0;
+  for (const o of items) for (const p of o.perWl) {
+    if (!p.ok) continue;
+    if (p.tFocus != null) fmax = Math.max(fmax, Math.abs(p.tFocus));
+    if (p.sFocus != null) fmax = Math.max(fmax, Math.abs(p.sFocus));
+    if (isFinite(p.dist)) dmax = Math.max(dmax, Math.abs(p.dist));
+  }
+  if (!(fmax > 0)) fmax = 1e-3;
+  if (!(dmax > 0)) dmax = 0.5;
+  const fm = fmax * 1.15, dm = dmax * 1.2;
   const ys = f => mt + ph - (f / vmax) * ph;
+  const xT = v => lx0 + lw / 2 + (v / fm) * (lw / 2);
+  const xD = v => rx0 + rw / 2 + (v / dm) * (rw / 2);
+  const mono = 'ui-monospace,monospace';
   for (let k = -2; k <= 2; k++) {
-    const x = xs(fmax * k / 2);
-    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(fmax * k / 2 * 1000).toFixed(0)}</text>`);
+    const v = (k / 2) * fm, x = xT(v);
+    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="${k === 0 ? '#6D7B86' : '#1b232d'}" stroke-width="${k === 0 ? 1.2 : 1}"/>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="${mono}">${v.toFixed(2)}</text>`);
+    const u = (k / 2) * dm, xx = xD(u);
+    g.push(`<line x1="${xx.toFixed(1)}" y1="${mt}" x2="${xx.toFixed(1)}" y2="${mt + ph}" stroke="${k === 0 ? '#6D7B86' : '#1b232d'}" stroke-width="${k === 0 ? 1.2 : 1}"/>`);
+    g.push(`<text x="${xx.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="${mono}">${u.toFixed(2)}</text>`);
   }
   for (let k = 0; k <= 4; k++) {
     const f = vmax * k / 4, y = ys(f);
-    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(vmax < 5 ? 2 : 1)}</text>`);
+    g.push(`<line x1="${lx0}" y1="${y.toFixed(1)}" x2="${lx0 + lw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<line x1="${rx0}" y1="${y.toFixed(1)}" x2="${rx0 + rw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
+    g.push(`<text x="${lx0 - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="${mono}">${f.toFixed(vmax < 5 ? 2 : 1)}</text>`);
   }
-  g.push(`<line x1="${xs(0).toFixed(1)}" y1="${mt}" x2="${xs(0).toFixed(1)}" y2="${mt + ph}" stroke="#6D7B86" stroke-width="1.2"/>`);
-  g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  g.push(`<rect x="${lx0}" y="${mt}" width="${lw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  g.push(`<rect x="${rx0}" y="${mt}" width="${rw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  g.push(`<text x="${lx0 + lw / 2}" y="${mt - 8}" text-anchor="middle" fill="#E6EDF1" font-size="11.5" font-family="${mono}">场曲 (T 实线 / S 虚线)</text>`);
+  g.push(`<text x="${rx0 + rw / 2}" y="${mt - 8}" text-anchor="middle" fill="#E6EDF1" font-size="11.5" font-family="${mono}">F-Tan(Theta) 畸变</text>`);
+  g.push(`<text x="${lx0 + lw / 2}" y="${mt + ph + 34}" text-anchor="middle" fill="#9caab4" font-size="11" font-family="${mono}">毫米</text>`);
+  g.push(`<text x="${rx0 + rw / 2}" y="${mt + ph + 34}" text-anchor="middle" fill="#9caab4" font-size="11" font-family="${mono}">百分比</text>`);
   for (const w of wl) {
-    const T = [], S = [];
+    const T = [], S = [], C = [];
     for (const o of items) {
       const p = o.perWl.find(q => q.nm === w.nm && q.ok);
       if (!p) continue;
-      T.push(`${xs(p.tFocus).toFixed(1)},${ys(Math.abs(o.field)).toFixed(1)}`);
-      S.push(`${xs(p.sFocus).toFixed(1)},${ys(Math.abs(o.field)).toFixed(1)}`);
+      const fy = ys(Math.abs(o.field)).toFixed(1);
+      if (p.tFocus != null) T.push(`${xT(p.tFocus).toFixed(1)},${fy}`);
+      if (p.sFocus != null) S.push(`${xT(p.sFocus).toFixed(1)},${fy}`);
+      if (isFinite(p.dist)) C.push(`${xD(p.dist).toFixed(1)},${fy}`);
     }
     const col = adaptHexStr(w.color);
-    if (T.length >= 2) g.push(`<polyline points="${T.join(' ')}" fill="none" stroke="${col}" stroke-width="1.8"/>`);
-    if (S.length >= 2) g.push(`<polyline points="${S.join(' ')}" fill="none" stroke="${col}" stroke-width="1.8" stroke-dasharray="5 3"/>`);
+    if (T.length >= 2) g.push(`<polyline points="${T.join(' ')}" fill="none" stroke="${col}" stroke-width="1.6"/>`);
+    if (S.length >= 2) g.push(`<polyline points="${S.join(' ')}" fill="none" stroke="${col}" stroke-width="1.6" stroke-dasharray="4 2"/>`);
+    if (C.length >= 2) g.push(`<polyline points="${C.join(' ')}" fill="none" stroke="${col}" stroke-width="1.6"/>`);
   }
-  const ly = H - 20;
-  let lx = ml;
+  let lgx = lx0;
   for (const w of wl) {
-    g.push(`<line x1="${lx}" y1="${ly - 4}" x2="${lx + 15}" y2="${ly - 4}" stroke="${adaptHexStr(w.color)}" stroke-width="1.8"/><line x1="${lx}" y1="${ly + 5}" x2="${lx + 15}" y2="${ly + 5}" stroke="${adaptHexStr(w.color)}" stroke-width="1.8" stroke-dasharray="4 2"/>`);
-    g.push(`<text x="${lx + 19}" y="${ly + 3}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${w.nm.toFixed(1)}</text>`);
-    lx += 88;
+    g.push(`<line x1="${lgx}" y1="${mt + ph + 52}" x2="${lgx + 14}" y2="${mt + ph + 52}" stroke="${adaptHexStr(w.color)}" stroke-width="1.8"/>`);
+    g.push(`<text x="${lgx + 18}" y="${mt + ph + 56}" fill="#9caab4" font-size="10" font-family="${mono}">${w.nm.toFixed(1)}</text>`);
+    lgx += 74;
   }
-  g.push(`<text x="${lx + 2}" y="${ly + 3}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">实线=子午T 虚线=弧矢S · 横轴 μm · 边缘×主光线交点</text>`);
-  el.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  el.innerHTML = g.join('');
-}
-function renderAberDistSVG(el, res, mode) {
-  const W = 620, H = 384, ml = 66, mr = 24, mt = 44, mb = 66;
-  const pw = W - ml - mr, ph = H - mt - mb;
-  const items = (res.items || []).filter(o => o.ok && o.perWl && o.perWl.some(p => p.ok && isFinite(p.dist)));
-  const wl = res.wl || [];
-  const g = [];
-  const unit = mode === 'height' ? '像高 mm' : '半视场角 °';
-  g.push(`<text x="${ml - 48}" y="22" fill="#E6EDF1" font-size="13" font-weight="600" font-family="ui-monospace,monospace">畸变 F-Tan(Theta) · 面： 像面</text>`);
-  g.push(`<text x="${W - mr}" y="22" text-anchor="end" fill="#9caab4" font-size="11" font-family="ui-monospace,monospace">纵轴 视场 ${unit}</text>`);
-  if (!items.length) { el.setAttribute('viewBox', `0 0 ${W} ${H}`); el.innerHTML = g.join('') + `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#9caab4" font-size="12">无数据</text>`; return; }
-  const vmax = Math.max(...items.map(o => Math.abs(o.field)), 1e-9);
-  let dmax = 0;
-  for (const o of items) for (const p of o.perWl) if (p.ok && isFinite(p.dist)) dmax = Math.max(dmax, Math.abs(p.dist));
-  if (!(dmax > 0)) dmax = 0.5;
-  dmax *= 1.2;
-  const xs = v => ml + pw / 2 + (v / dmax) * (pw / 2);
-  const ys = f => mt + ph - (f / vmax) * ph;
-  for (let k = -2; k <= 2; k++) {
-    const x = xs(dmax * k / 2);
-    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${(dmax * k / 2).toFixed(2)}</text>`);
-  }
-  for (let k = 0; k <= 4; k++) {
-    const f = vmax * k / 4, y = ys(f);
-    g.push(`<line x1="${ml}" y1="${y.toFixed(1)}" x2="${ml + pw}" y2="${y.toFixed(1)}" stroke="#1b232d" stroke-width="1"/>`);
-    g.push(`<text x="${ml - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${f.toFixed(vmax < 5 ? 2 : 1)}</text>`);
-  }
-  g.push(`<line x1="${xs(0).toFixed(1)}" y1="${mt}" x2="${xs(0).toFixed(1)}" y2="${mt + ph}" stroke="#6D7B86" stroke-width="1.2"/>`);
-  g.push(`<rect x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
-  for (const w of wl) {
-    const C = [];
-    for (const o of items) { const p = o.perWl.find(q => q.nm === w.nm && q.ok); if (p) C.push(`${xs(p.dist).toFixed(1)},${ys(Math.abs(o.field)).toFixed(1)}`); }
-    if (C.length >= 2) g.push(`<polyline points="${C.join(' ')}" fill="none" stroke="${adaptHexStr(w.color)}" stroke-width="1.8"/>`);
-  }
-  const ly = H - 20;
-  let lx = ml;
-  for (const w of wl) {
-    g.push(`<line x1="${lx}" y1="${ly + 1}" x2="${lx + 15}" y2="${ly + 1}" stroke="${adaptHexStr(w.color)}" stroke-width="1.8"/>`);
-    g.push(`<text x="${lx + 19}" y="${ly + 4}" fill="#9caab4" font-size="10" font-family="ui-monospace,monospace">${w.nm.toFixed(1)}</text>`);
-    lx += 88;
-  }
-  g.push(`<text x="${lx + 2}" y="${ly + 4}" fill="#6D7B86" font-size="9" font-family="ui-monospace,monospace">横轴 % · 负=桶形 正=枕形 · 参考=近轴主光像高 · EFL=${(res.efl || 0).toFixed(2)}mm</text>`);
+  const last = items[items.length - 1];
+  const pp = last.perWl.find(p => p.ok && Math.abs(p.nm - primaryNm) < 1e-6) || last.perWl.find(p => p.ok) || { nm: primaryNm };
+  let dMax = 0;
+  for (const o of items) { const p = o.perWl.find(q => q.nm === pp.nm && q.ok); if (p && isFinite(p.dist)) dMax = Math.max(dMax, Math.abs(p.dist)); }
+  const by = 400, bh = 92;
+  g.push(`<rect x="${lx0 - 6}" y="${by}" width="${lw + 12}" height="${bh}" fill="none" stroke="#39424d" stroke-width="1"/>`);
+  g.push(`<rect x="${rx0 - 6}" y="${by}" width="${rw + 12}" height="${bh}" fill="none" stroke="#39424d" stroke-width="1"/>`);
+  const fldStr = mode === 'height' ? vmax.toFixed(3) + ' 毫米' : vmax.toFixed(2) + ' 度';
+  const txt = (x, y, s, c) => g.push(`<text x="${x}" y="${y}" fill="${c || '#c9d6df'}" font-size="12" font-family="${mono}">${s}</text>`);
+  txt(lx0, by + 18, '场曲', '#E6EDF1');
+  txt(rx0, by + 18, `F-Tan(Theta) 畸变`, '#E6EDF1');
+  txt(lx0, by + 40, `最大视场 = ${fldStr}`);
+  txt(lx0, by + 58, `弧矢场曲 = ${(pp.sFocus || 0).toFixed(4)} 毫米`);
+  txt(lx0, by + 76, `子午场曲 = ${(pp.tFocus || 0).toFixed(4)} 毫米`);
+  txt(rx0, by + 40, `最大视场 = ${fldStr}`);
+  txt(rx0, by + 58, `最大畸变 = ${dMax.toFixed(4)}%`);
+  txt(rx0, by + 76, `波长 = ${pp.nm.toFixed(1)} nm`);
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = g.join('');
 }

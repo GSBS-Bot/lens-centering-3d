@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tmp = path.join(__dirname, '.tmp');
 const { parseZmx } = await import('file://' + path.join(tmp, 'import_bench.mjs').replace(/\\/g, '/'));
-const { traceFieldBundle, traceRay3 } = await import('file://' + path.join(tmp, 'trace_bench.mjs').replace(/\\/g, '/'));
+const { traceFieldBundle, traceRay3, firstOrder } = await import('file://' + path.join(tmp, 'trace_bench.mjs').replace(/\\/g, '/'));
 
 const p = 'C:/Users/lylens/Desktop/3d可视化镜头调芯模型9-9/3d可视化镜头调芯模型/3d可视化镜头调芯模型/测试zemax文件/Advanced_SC_doubleGauss_final.zmx';
 const b0 = fs.readFileSync(p);
@@ -13,6 +13,11 @@ const text = (b0[0] === 0xFF && b0[1] === 0xFE) ? b0.toString('utf16le').replace
 const sys = parseZmx(text);
 const sl = []; { const n = sys.surfaces.length, zS = -sys.surfaceZ(n - 1); for (let i = 0; i < n; i++) { const s = sys.surfaces[i]; sl.push({ idx: i, z: sys.surfaceZ(i) + zS, semi: s.semi, mSemi: s.mSemi, type: s.type }); } }
 const LAM = 0.587562, MODE = sys.fmode;
+const fo = firstOrder(sys, sl, LAM) || {};
+// 近轴像面 z（像面在 0，bfl 自最后光学面顶点量起）
+const lastZ = sl[sl.length - 2] ? sl[sl.length - 2].z : 0;
+const zParax = lastZ - (fo.bfl || 0);
+console.log('BFL=' + (fo.bfl || 0).toFixed(4) + '  zParax(µm)=' + (zParax * 1000).toFixed(2));
 
 function setup(fv) {
   const b = traceFieldBundle(sys, sl, { mode: MODE, field: fv, nPupil: 1, lambdaUm: LAM });
