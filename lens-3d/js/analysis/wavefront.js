@@ -1,8 +1,8 @@
 // analysis/wavefront.js — 波前(OPD)采样：复瞳函数输入，供 mtf.js 的 FFT 衍射 MTF
-import { LAM_D } from '../core/glass.js?v=1.5.15';
-import { opticalSurfaces } from '../core/surface.js?v=1.5.15';
-import { traceRay3, firstOrder } from '../core/raytrace.js?v=1.5.15';
-import { traceFieldBundle } from '../core/beam.js?v=1.5.15';
+import { LAM_D } from '../core/glass.js?v=1.5.16';
+import { opticalSurfaces } from '../core/surface.js?v=1.5.16';
+import { traceRay3, firstOrder } from '../core/raytrace.js?v=1.5.16';
+import { traceFieldBundle } from '../core/beam.js?v=1.5.16';
 
 
 // 3×3 线性方程求解(M·x=Y)，奇异返回 null（用于波前的活塞+倾斜最小二乘）

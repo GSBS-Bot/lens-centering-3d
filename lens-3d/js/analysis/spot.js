@@ -1,8 +1,8 @@
 // analysis/spot.js — 点列图：入瞳内 N×N 网格 → 像面落点
-import { LAM_D } from '../core/glass.js?v=1.5.15';
-import { opticalSurfaces } from '../core/surface.js?v=1.5.15';
-import { traceRay3 } from '../core/raytrace.js?v=1.5.15';
-import { traceFieldBundle } from '../core/beam.js?v=1.5.15';
+import { LAM_D } from '../core/glass.js?v=1.5.16';
+import { opticalSurfaces } from '../core/surface.js?v=1.5.16';
+import { traceRay3 } from '../core/raytrace.js?v=1.5.16';
+import { traceFieldBundle } from '../core/beam.js?v=1.5.16';
 
 
 // ---- 点列图（M2b 第一步）：对某视场在入瞳内做 N×N 网格采样，记录像面(x,y)落点 ----

@@ -5,6 +5,7 @@
 // 避免逐条光线重建（MTF 上万条光线时这是主要分配来源）。
 const _SURF_CACHE = new WeakMap();
 export function opticalSurfaces(sys, surfaceList) {
+  if (!sys || !surfaceList || surfaceList.length !== sys.surfaces.length) return [];   // 未就绪/几何未重建
   const c = _SURF_CACHE.get(surfaceList);
   if (c && c.sys === sys) return c.S;
   const S = [];

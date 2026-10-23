@@ -1,7 +1,7 @@
 // core/beam.js — 「束」层：视场光束/主光线瞄准/自动渐晕/逐视场调度
-import { LAM_D, indexOf } from './glass.js?v=1.5.15';
-import { opticalSurfaces, intersect, surfaceNormal, refract } from './surface.js?v=1.5.15';
-import { traceRay3, firstOrder, entrancePupil, beamEPD } from './raytrace.js?v=1.5.15';
+import { LAM_D, indexOf } from './glass.js?v=1.5.16';
+import { opticalSurfaces, intersect, surfaceNormal, refract } from './surface.js?v=1.5.16';
+import { traceRay3, firstOrder, entrancePupil, beamEPD } from './raytrace.js?v=1.5.16';
 
 
 // 追迹「轴上平行光」在光阑口径内的 nRay 条子午光线

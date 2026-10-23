@@ -1,8 +1,8 @@
 // analysis/illum.js — 相对照度（一维）：入瞳圆内采样 → 通过率 × cos⁴θ
-import { LAM_D } from '../core/glass.js?v=1.5.15';
-import { opticalSurfaces } from '../core/surface.js?v=1.5.15';
-import { traceRay3, firstOrder } from '../core/raytrace.js?v=1.5.15';
-import { traceFieldBundle } from '../core/beam.js?v=1.5.15';
+import { LAM_D } from '../core/glass.js?v=1.5.16';
+import { opticalSurfaces } from '../core/surface.js?v=1.5.16';
+import { traceRay3, firstOrder } from '../core/raytrace.js?v=1.5.16';
+import { traceFieldBundle } from '../core/beam.js?v=1.5.16';
 
 
 // ---- 相对照度（一维）------------------------------------------------------

@@ -1,8 +1,8 @@
 // analysis/aberr.js — 像差分析：场曲/像散、F-Tan(Theta) 畸变、纵向球差、最佳对焦
-import { LAM_D, indexOf } from '../core/glass.js?v=1.5.15';
-import { opticalSurfaces } from '../core/surface.js?v=1.5.15';
-import { traceRay3, firstOrder } from '../core/raytrace.js?v=1.5.15';
-import { traceFieldBundle } from '../core/beam.js?v=1.5.15';
+import { LAM_D, indexOf } from '../core/glass.js?v=1.5.16';
+import { opticalSurfaces } from '../core/surface.js?v=1.5.16';
+import { traceRay3, firstOrder } from '../core/raytrace.js?v=1.5.16';
+import { traceFieldBundle } from '../core/beam.js?v=1.5.16';
 
 
 // ---- 近轴主光线像高：主光线(过入瞳中心)的近轴追迹（与 Zemax「参考高度」一致）----

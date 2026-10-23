@@ -1,8 +1,8 @@
 // analysis/fan.js — 光扇图(Ray Fan)：子午/弧矢横向像差 εy/εx
-import { LAM_D } from '../core/glass.js?v=1.5.15';
-import { opticalSurfaces } from '../core/surface.js?v=1.5.15';
-import { traceRay3 } from '../core/raytrace.js?v=1.5.15';
-import { traceFieldBundle } from '../core/beam.js?v=1.5.15';
+import { LAM_D } from '../core/glass.js?v=1.5.16';
+import { opticalSurfaces } from '../core/surface.js?v=1.5.16';
+import { traceRay3 } from '../core/raytrace.js?v=1.5.16';
+import { traceFieldBundle } from '../core/beam.js?v=1.5.16';
 
 
 // ---- 光扇图(Ray Fan)：某视场/波长，沿子午(px=0, py 扫描)与弧矢(py=0, px 扫描)采样，

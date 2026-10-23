@@ -1,7 +1,7 @@
 // core/raytrace.js — 单条光线追迹与一阶量（EFL/BFL/F#、入瞳、光束口径）
 import { radiusToCurv } from '../model.js?v=0.8.4';
-import { LAM_D, indexOf } from './glass.js?v=1.5.15';
-import { opticalSurfaces, intersect3, surfaceNormal3, refract3 } from './surface.js?v=1.5.15';
+import { LAM_D, indexOf } from './glass.js?v=1.5.16';
+import { opticalSurfaces, intersect3, surfaceNormal3, refract3 } from './surface.js?v=1.5.16';
 
 
 // 3D 全光线追迹：返回逐面命中点 [x,y,z]、像面(x,y)、光程 opl 与渐晕/未命中信息。
