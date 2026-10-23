@@ -790,6 +790,117 @@ export function fieldAberrations(sys, surfaceList, cfg = {}) {
   return { mode, efl, wl: lambdas.map(w => ({ nm: w.nm, color: w.color })), items };
 }
 
+// ---- 纵向球差(LSA)：轴上视场，逐波长沿子午方向扫描入瞳高度 ----
+// 每条光线与光轴的交点 z 相对近轴焦点(z = 末面顶点 + BFL)的偏移即 LSA(mm)。
+// Zemax「纵向球差」口径：纵轴=归一化瞳高(-1..+1)，横轴=焦移 mm，0 = 近轴焦面。
+export function longitudinalAberration(sys, surfaceList, cfg = {}) {
+  const lambdas = (cfg.lambdas && cfg.lambdas.length) ? cfg.lambdas
+    : [{ nm: (cfg.lambdaUm ?? LAM_D) * 1000, color: '#ffb300' }];
+  const N = Math.max(5, Math.min(81, cfg.nGrid ?? 41)) | 0;
+  const S = opticalSurfaces(sys, surfaceList);
+  if (!S.length) return { zParax: 0, zImage: 0, perWl: [] };
+  const zLast = S[S.length - 1].z;
+  const perWl = lambdas.map((wl) => {
+    const L = wl.nm / 1000;
+    const fo = firstOrder(sys, surfaceList, L);
+    const zParax = (fo && isFinite(fo.bfl)) ? zLast + fo.bfl : 0;
+    const b = traceFieldBundle(sys, surfaceList, { mode: 'angle', field: 0, nPupil: 1, lambdaUm: L });
+    const c = b.chief;
+    if (!c) return { nm: wl.nm, color: wl.color, ok: false, zParax, pts: [] };
+    const finite = c._finite;
+    const param = (c._a != null ? c._a : c._h) || 0;
+    const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
+    const ang = (c._theta ?? 0) * Math.PI / 180;
+    const pts = [];
+    for (let k = 0; k < N; k++) {
+      const p = -1 + 2 * k / (N - 1);
+      let P0, D0;
+      if (finite) {
+        const dy = p * epd / 2 - param, dz = zEP - zObj;
+        const L0 = Math.hypot(dy, dz) || 1;
+        P0 = [0, param, zObj]; D0 = [0, dy / L0, dz / L0];
+      } else {
+        P0 = [0, param + p * epd / 2, zStart]; D0 = [0, Math.sin(ang), Math.cos(ang)];
+      }
+      const tr = traceRay3(sys, surfaceList, P0, D0, L, true);
+      let lsa = null;
+      if (tr.ok && tr.lastHit && tr.dir && Math.abs(tr.dir[1]) > 1e-12) {
+        const zc = tr.lastHit[2] - tr.lastHit[1] * tr.dir[2] / tr.dir[1];
+        if (isFinite(zc)) lsa = zc - zParax;
+      }
+      pts.push({ p, h: p * epd / 2, lsa });
+    }
+    return { nm: wl.nm, color: wl.color, ok: pts.some(q => q.lsa != null), zParax, pts };
+  });
+  return { zParax: perWl[0] ? perWl[0].zParax : 0, zImage: 0, perWl };
+}
+
+// ---- 最佳对焦：使所选视场/波长的 RMS 点列半径最小的像面平移量 ----
+// 像面沿 +z 平移 s 后落点 x(s)=x0+s·ux, y(s)=y0+s·uy（ux=dx/dz, uy=dy/dz）。
+// RMS²(s) 是 s 的二次函数，闭式最优 s* = -B/A（A、B 为去质心后的加权二阶/交叉矩）。
+export function bestFocus(sys, surfaceList, cfg = {}) {
+  const mode = cfg.mode === 'height' ? 'height' : 'angle';
+  const lambdas = (cfg.lambdas && cfg.lambdas.length) ? cfg.lambdas : [{ nm: (cfg.lambdaUm ?? LAM_D) * 1000, weight: 1 }];
+  const list = (cfg.fields && cfg.fields.length) ? cfg.fields : [0];
+  const N = Math.max(3, Math.min(41, cfg.nGrid ?? 11)) | 0;
+  const S = opticalSurfaces(sys, surfaceList);
+  const vigCoefs = cfg.vigCoefs || [];
+  if (!S.length) return null;
+  const groups = [];
+  list.forEach((fv, fi) => {
+    const vc = vigCoefs[fi] || null;
+    const inWin = (px, py) => !vc || (px >= vc.xLo && px <= vc.xHi && py >= vc.yLo && py <= vc.yHi);
+    const pts = [];
+    groups.push(pts);
+    lambdas.forEach((wl) => {
+      const L = wl.nm / 1000, w = (wl.weight == null ? 1 : wl.weight) || 0;
+      if (!(w > 0)) return;
+      const b = traceFieldBundle(sys, surfaceList, { mode, field: +fv, nPupil: 1, lambdaUm: L });
+      const c = b.chief; if (!c) return;
+      const finite = c._finite;
+      const param = (c._a != null ? c._a : c._h) || 0;
+      const zEP = c._zEP ?? b.stopZ, zObj = c._zObj, zStart = c._zStart, epd = b.epd || 1;
+      const ang = (c._theta ?? 0) * Math.PI / 180;
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+        const px = -1 + 2 * i / (N - 1), py = -1 + 2 * j / (N - 1);
+        if (!inWin(px, py)) continue;
+        let P0, D0;
+        if (finite) {
+          const dx = px * epd / 2, dy = py * epd / 2 - param, dz = zEP - zObj;
+          const L0 = Math.hypot(dx, dy, dz) || 1; P0 = [0, param, zObj]; D0 = [dx / L0, dy / L0, dz / L0];
+        } else {
+          P0 = [px * epd / 2, param + py * epd / 2, zStart]; D0 = [0, Math.sin(ang), Math.cos(ang)];
+        }
+        const tr = traceRay3(sys, surfaceList, P0, D0, L, false);
+        if (!(tr.ok && tr.imageX != null && tr.imageY != null)) continue;
+        const D = tr.dir || [0, 0, 1], uz = Math.abs(D[2]) > 1e-12 ? D[2] : 1;
+        pts.push({ x: tr.imageX, y: tr.imageY, u: D[0] / uz, v: D[1] / uz, w });
+      }
+    });
+  });
+  // 逐视场各去各的质心（点列 RMS 按场定义），再按权重汇总；A/B/C 可跨场相加。
+  let A = 0, B = 0, C = 0, W = 0, n = 0;
+  for (const pts of groups) {
+    if (pts.length < 3) continue;
+    let w = 0, X = 0, Y = 0, U = 0, V = 0;
+    for (const p of pts) { w += p.w; X += p.w * p.x; Y += p.w * p.y; U += p.w * p.u; V += p.w * p.v; }
+    if (!(w > 0)) continue;
+    const xb = X / w, yb = Y / w, ub = U / w, vb = V / w;
+    for (const p of pts) {
+      const dx = p.x - xb, dy = p.y - yb, du = p.u - ub, dv = p.v - vb;
+      A += p.w * (du * du + dv * dv);
+      B += p.w * (dx * du + dy * dv);
+      C += p.w * (dx * dx + dy * dy);
+    }
+    W += w; n += pts.length;
+  }
+  if (!(W > 0)) return null;
+  const shift = A > 1e-16 ? -B / A : 0;
+  const rms0 = Math.sqrt(C / W);
+  const rmsBest = A > 1e-16 ? Math.sqrt(Math.max(0, C / W - (B * B) / (A * W))) : rms0;
+  return { shift, rms0, rmsBest, nRays: n, mode, fields: list.slice() };
+}
+
 // ---- 相对照度（一维）------------------------------------------------------
 // 逐视场在【入瞳圆内】均匀网格实光线追迹：
 //   通过率 V    = 到达像面的样本数 / 圆内样本数(即有效通光面积比, 含渐晕/口径)；

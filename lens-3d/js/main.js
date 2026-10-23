@@ -5,7 +5,7 @@ import { System, demoSingleElement, DEMO_LENSES, ELEMENTS } from './model.js?v=0
 import { buildSystemGroup, buildSurfaceMarker, renderLayoutSVG, layoutBadge, setTheme3D } from './geom.js?v=1.1.8';
 import { LDM } from './ldm.js?v=0.8.4';
 import { importFile, importFriendJson, exportZmx } from './import.js?v=1.4.3';
-import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations } from './trace.js?v=1.5.9';
+import { traceFields, firstOrder, autoVignette, traceSpot, traceIllumination, traceWavefront, traceRayFan, fieldAberrations, longitudinalAberration, bestFocus } from './trace.js?v=1.5.10';
 import { geometricOTFComplex, diffractionLimit, sampleOtfComplex, otfFromPupil, otfFromOpd, throughFocusFromPupil, throughFocusMultiColor, throughFocusMTF, defocusWaves } from './mtf.js?v=1.4.4';
 
 const STATUS = document.querySelector('.status');
@@ -54,6 +54,10 @@ const aberGrid = document.getElementById('aberGrid');
 const aberRange = document.getElementById('aberRange');
 const aberField = document.getElementById('aberField');
 const aberWavelength = document.getElementById('aberWavelength');
+const bestFocusBtn = document.getElementById('bestFocusBtn');
+const bestFocusVal = document.getElementById('bestFocusVal');
+const bestFocusApply = document.getElementById('bestFocusApply');
+let bfShift = null;      // 最近一次「最佳对焦」的像面平移量 mm（+z = 远离镜头）
 const vigEl = document.getElementById('fieldVig');
 
 function setStatus(msg, ok) {
@@ -654,7 +658,7 @@ function populateAberSelects() {
 function updateAber() {
   if (!aberMain) return;
   const type = aberType?.value || 'fan';
-  const nGrid = Math.max(5, Math.min(41, parseInt(aberGrid?.value, 10) || 21)) | 0;
+  const nGrid = Math.max(5, Math.min(81, parseInt(aberGrid?.value, 10) || 21)) | 0;
   const mode = fmodeEl?.value || 'angle';
   const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
   const wsel = aberWavelength?.value || 'all';
@@ -669,6 +673,9 @@ function updateAber() {
       groups: wlList.map(w => ({ nm: w.nm, color: w.color || '#ffb300', fan: traceRayFan(sys, surfaceList, { mode, field: fv, lambdaUm: w.nm / 1000, nGrid }) })),
     }));
     renderAberFanSVG(aberMain, fans, wlList, mode, pri.nm);
+  } else if (type === 'lsa') {
+    const res = longitudinalAberration(sys, surfaceList, { lambdas: wlList, nGrid });
+    renderAberLsaSVG(aberMain, res, pri.nm);
   } else {
     // 场曲/畸变：0→最大视场均匀采样（否则只有设计视场几个点，曲线是折线）
     let fields;
@@ -824,6 +831,90 @@ function renderAberFdSVG(el, res, mode, primaryNm) {
   txt(rx0, by + 46, `最大视场 = ${fldStr}`);
   txt(rx0, by + 70, `最大畸变 = ${dMax.toFixed(4)}%`);
   txt(rx0, by + 94, `波长 = ${pp.nm.toFixed(1)} nm`);
+  el.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  el.innerHTML = legible(g.join(''), el, W);
+}
+function renderAberLsaSVG(el, res, primaryNm) {
+  const W = 1000, H = 500;
+  const mt = 64, ph = 300, lx0 = 92, lw = 600;
+  const rbx = 712, rby = 64, rbw = 274, rbh = 300;
+  const mono = 'ui-monospace,monospace';
+  const perWl = (res.perWl || []).filter(w => w.ok && w.pts && w.pts.length);
+  const g = [];
+  g.push(`<text x="20" y="20" fill="#E6EDF1" font-size="13" font-weight="600" font-family="${mono}">纵向球差 (Longitudinal Aberration) · 轴上 · 面：像面</text>`);
+  if (!perWl.length) {
+    el.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    el.innerHTML = g.join('') + `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#9caab4" font-size="12">无数据</text>`;
+    return;
+  }
+  let lmax = 0;
+  for (const w of perWl) for (const q of w.pts) if (q.lsa != null) lmax = Math.max(lmax, Math.abs(q.lsa));
+  const zParax = res.zParax || 0;
+  const imgRel = 0 - zParax;                    // 像面相对近轴焦面
+  lmax = Math.max(lmax, Math.abs(imgRel), 1e-4);
+  const lm = lmax * 1.15;
+  const xs = v => lx0 + lw / 2 + (v / lm) * (lw / 2);
+  const yp = p => mt + ph / 2 - p * ph / 2;
+  for (let k = -2; k <= 2; k++) {
+    const v = (k / 2) * lm, x = xs(v);
+    g.push(`<line x1="${x.toFixed(1)}" y1="${mt}" x2="${x.toFixed(1)}" y2="${mt + ph}" stroke="${k === 0 ? '#6D7B86' : '#1b232d'}" stroke-width="${k === 0 ? 1.2 : 1}"/>`);
+    g.push(`<text x="${x.toFixed(1)}" y="${mt + ph + 16}" text-anchor="middle" fill="#9caab4" font-size="10" font-family="${mono}">${v.toFixed(3)}</text>`);
+  }
+  for (let k = -2; k <= 2; k++) {
+    const p = k / 2, y = yp(p);
+    g.push(`<line x1="${lx0}" y1="${y.toFixed(1)}" x2="${lx0 + lw}" y2="${y.toFixed(1)}" stroke="${k === 0 ? '#6D7B86' : '#1b232d'}" stroke-width="${k === 0 ? 1.2 : 1}"/>`);
+    g.push(`<text x="${lx0 - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#9caab4" font-size="10" font-family="${mono}">${(p).toFixed(1)}</text>`);
+  }
+  g.push(`<text transform="translate(${lx0 - 52} ${mt + ph / 2}) rotate(-90)" text-anchor="middle" fill="#9caab4" font-size="10" font-family="${mono}">归一化瞳高</text>`);
+  g.push(`<rect x="${lx0}" y="${mt}" width="${lw}" height="${ph}" fill="none" stroke="#4F7D89" stroke-width="1"/>`);
+  g.push(`<text x="${lx0 + lw / 2}" y="${mt - 8}" text-anchor="middle" fill="#E6EDF1" font-size="11.5" font-family="${mono}">焦移 (mm)</text>`);
+  g.push(`<text x="${lx0 + lw / 2}" y="${mt + ph + 34}" text-anchor="middle" fill="#9caab4" font-size="11" font-family="${mono}">毫米（0 = 近轴焦面，负 = 靠向镜头）</text>`);
+  // 像面位置（相对近轴焦面）
+  if (Math.abs(imgRel) > 1e-6) {
+    const xi = xs(imgRel);
+    g.push(`<line x1="${xi.toFixed(1)}" y1="${mt}" x2="${xi.toFixed(1)}" y2="${mt + ph}" stroke="#ffb300" stroke-width="1.2" stroke-dasharray="5 3" opacity=".9"/>`);
+    g.push(`<text x="${(xi + 4).toFixed(1)}" y="${mt + 12}" fill="#ffb300" font-size="10" font-family="${mono}">像面</text>`);
+  }
+  // 最佳像面（点击「最佳对焦」后出现）
+  if (typeof bfShift === 'number' && isFinite(bfShift)) {
+    const xb = xs(bfShift - zParax);
+    g.push(`<line x1="${xb.toFixed(1)}" y1="${mt}" x2="${xb.toFixed(1)}" y2="${mt + ph}" stroke="#3ddc97" stroke-width="1.2" stroke-dasharray="3 3" opacity=".9"/>`);
+    g.push(`<text x="${(xb + 4).toFixed(1)}" y="${mt + 26}" fill="#3ddc97" font-size="10" font-family="${mono}">最佳</text>`);
+  }
+  for (const w of perWl) {
+    const pts = w.pts.filter(q => q.lsa != null).map(q => `${xs(q.lsa).toFixed(1)},${yp(q.p).toFixed(1)}`);
+    if (pts.length >= 2) g.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="${adaptHexStr(w.color)}" stroke-width="1.6"/>`);
+    else if (pts.length === 1) g.push(`<circle cx="${pts[0].split(',')[0]}" cy="${pts[0].split(',')[1]}" r="1.8" fill="${adaptHexStr(w.color)}"/>`);
+  }
+  const lastW = perWl.find(w => Math.abs(w.nm - primaryNm) < 1e-6) || perWl[0];
+  const edgeP = (sign) => {
+    let best = null, bd = 1e9;
+    for (const q of lastW.pts) { if (q.lsa == null) continue; const d = Math.abs(q.p - sign); if (d < bd) { bd = d; best = q.lsa; } }
+    return best;
+  };
+  let amax = 0;
+  for (const w of perWl) for (const q of w.pts) if (q.lsa != null && Math.abs(q.lsa) > amax) amax = Math.abs(q.lsa);
+  const eP = edgeP(1);
+  // 右侧信息栏：读数 + 图例
+  g.push(`<rect x="${rbx}" y="${rby}" width="${rbw}" height="${rbh}" fill="none" stroke="#39424d" stroke-width="1"/>`);
+  const txt = (x, y, s, c, sz) => g.push(`<text x="${x}" y="${y}" fill="${c || '#dce7f0'}" font-size="${sz || 15}" font-family="${mono}">${s}</text>`);
+  const sg = (v) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(4);
+  txt(rbx + 14, rby + 28, '纵向球差', '#E6EDF1');
+  txt(rbx + 14, rby + 58, `边缘球差 = ${eP == null ? '—' : sg(eP)} 毫米`);
+  txt(rbx + 14, rby + 82, `最大球差 = ±${amax.toFixed(4)} 毫米`);
+  txt(rbx + 14, rby + 106, `近轴焦点至像面 = ${sg(imgRel)} 毫米`);
+  txt(rbx + 14, rby + 130, `波长 = ${lastW.nm.toFixed(1)} nm`);
+  if (typeof bfShift === 'number' && isFinite(bfShift)) {
+    txt(rbx + 14, rby + 154, `最佳像面 = ${bfShift >= 0 ? '+' : '−'}${Math.abs(bfShift * 1000).toFixed(2)} µm`, '#3ddc97');
+  }
+  txt(rbx + 14, rby + 188, '波长图例', '#9caab4', 11.5);
+  const nW = perWl.length, cols = nW > 4 ? 2 : 1;
+  for (let i = 0; i < nW; i++) {
+    const cx = rbx + 16 + (i % cols) * 132;
+    const cy = rby + 214 + Math.floor(i / cols) * 18;
+    g.push(`<line x1="${cx}" y1="${cy - 4}" x2="${cx + 22}" y2="${cy - 4}" stroke="${adaptHexStr(perWl[i].color)}" stroke-width="1.8"/>`);
+    txt(cx + 28, cy, `${perWl[i].nm.toFixed(1)} nm`, '#9caab4', 10.5);
+  }
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = legible(g.join(''), el, W);
 }
@@ -1216,6 +1307,7 @@ function freshSys(value) {
 }
 
 async function rebuildScene(keepCamera = false) {
+  bfShift = null; updateBestFocusUI();     // 几何变了，旧的最佳对焦结果失效
   if (lensGroup) { scene.remove(lensGroup); lensGroup = null; }
   clearHighlight();
   lensMeshes = [];
@@ -1410,6 +1502,54 @@ for (const el of [aberType, aberField, aberGrid, aberRange, aberWavelength]) {
   if (el) el.addEventListener('input', () => updateAber());
   if (el) el.addEventListener('change', () => updateAber());
 }
+// ---- 最佳对焦：RMS 点列最小像面（闭式解，见 trace.js bestFocus）----
+function aberSelection() {
+  const mode = fmodeEl?.value || 'angle';
+  const wlAll = activeLambdas().lambdas; const pri = wlAll[activeLambdas().primary] || wlAll[0];
+  const wsel = aberWavelength?.value || 'all';
+  const wlList = wsel === 'all' ? wlAll : (wsel === 'primary' ? [pri] : wlAll.filter(w => String(w.nm) === wsel));
+  const baseList = parseFields(fvalsEl?.value); if (!baseList.length) baseList.push(0);
+  const fsel = aberField?.value || 'all';
+  const fields = fsel === 'all' ? baseList : [+fsel];
+  const nGrid = Math.max(5, Math.min(41, parseInt(aberGrid?.value, 10) || 21)) | 0;
+  return { mode, wlList, fields, nGrid };
+}
+function fmtMicron(mm) {
+  const v = Math.abs(mm) * 1000;
+  const s = v >= 100 ? v.toFixed(0) : (v >= 10 ? v.toFixed(1) : v.toFixed(2));
+  return (mm < 0 ? '−' : '+') + s + ' µm';
+}
+function updateBestFocusUI() {
+  if (bestFocusVal) bestFocusVal.textContent = (bfShift == null) ? '—' : fmtMicron(bfShift);
+  if (bestFocusApply) bestFocusApply.disabled = (bfShift == null);
+}
+if (bestFocusBtn) bestFocusBtn.addEventListener('click', () => {
+  const sel = aberSelection();
+  const t0 = performance.now();
+  let r = null;
+  try {
+    r = bestFocus(sys, surfaceList, { mode: sel.mode, fields: sel.fields, lambdas: sel.wlList, nGrid: Math.max(5, Math.min(31, sel.nGrid)), vigCoefs: vigForFields(sel.fields) });
+  } catch (e) { console.error(e); }
+  if (!r) { bfShift = null; updateBestFocusUI(); setStatus('最佳对焦：有效光线不足，无法计算', false); return; }
+  bfShift = r.shift;
+  updateBestFocusUI();
+  const ms = (performance.now() - t0).toFixed(0);
+  setStatus(`最佳对焦：像面沿 +Z 平移 ${fmtMicron(bfShift)}（RMS ${fmtMicron(r.rms0)} → ${fmtMicron(r.rmsBest)}，${r.nRays} 条光线，${ms} ms）`, true);
+  if (aberView && aberView.classList.contains('on')) updateAber();
+});
+if (bestFocusApply) bestFocusApply.addEventListener('click', () => {
+  if (bfShift == null) return;
+  const i = sys.surfaces.length - 2;
+  const s = sys.surfaces[i];
+  if (i < 1 || !s || !isFinite(s.thi)) return;
+  const d = bfShift;
+  ldm.push();
+  s.thi = +(s.thi + d).toFixed(9);
+  bfShift = null; updateBestFocusUI();
+  ldm.render(sys, ldm.selected);
+  rebuildScene(true);
+  setStatus(`已把最佳对焦偏移 ${fmtMicron(d)} 写入面 ${i} 的厚度（Ctrl+Z 可撤销）`, true);
+});
 // 离焦单位切换：换算「范围」数值并刷新
 if (mtfFocusUnit) mtfFocusUnit.addEventListener('change', () => {
   const toUm = mtfFocusUnit.value === 'mm' ? 1000 : 1;
